@@ -39,7 +39,7 @@ const onboardingSteps: OnboardingStep[] = [
     helper: 'Mother Language',
     choiceStyle: 'default',
     progressStyle: 'default',
-    progressStep: 1,
+    progressStep: 2,
     choices: [
       { id: 'hebrew', label: 'Hebrew' },
       { id: 'english', label: 'English' },
@@ -53,7 +53,7 @@ const onboardingSteps: OnboardingStep[] = [
     helper: 'Korean Level',
     choiceStyle: 'compact',
     progressStyle: 'compact',
-    progressStep: 2,
+    progressStep: 3,
     choices: [
       { id: 'nothing', label: 'Nothing' },
       { id: 'only-hangul', label: 'Only hangul' },
@@ -73,9 +73,9 @@ const onboardingSteps: OnboardingStep[] = [
     helper: 'Age Range',
     choiceStyle: 'short',
     progressStyle: 'medium',
-    progressStep: 3,
+    progressStep: 4,
     choices: [
-      { id: '0-17', label: '0-17' },
+      { id: '0-17', label: 'Under 18' },
       { id: '18-24', label: '18-24' },
       { id: '25-34', label: '25-34' },
       { id: '35-44', label: '35-44' },
@@ -99,7 +99,7 @@ const onboardingSteps: OnboardingStep[] = [
     helper: 'Daily Study Time',
     choiceStyle: 'time',
     progressStyle: 'time',
-    progressStep: 4,
+    progressStep: 5,
     choices: [
       { id: '5-min', label: '5 min' },
       { id: '15-min', label: '15 min' },
@@ -119,7 +119,7 @@ const onboardingSteps: OnboardingStep[] = [
     helper: 'Goal',
     choiceStyle: 'goal',
     progressStyle: 'goal',
-    progressStep: 5,
+    progressStep: 6,
     choices: [
       { id: 'fun', label: 'Fun' },
       { id: 'tourism', label: 'Tourism' },
@@ -141,12 +141,12 @@ const onboardingSteps: OnboardingStep[] = [
     question: '',
     type: 'complete',
     helper: 'Completion',
-    progressStep: 5,
+    progressStep: 6,
     validator: () => true,
   },
 ]
 
-const progressPointCount = 5
+const progressPointCount = 6
 
 function OnboardingPage({ onBack, onComplete }: OnboardingPageProps) {
   const [currentStep, setCurrentStep] = useState(0)
@@ -225,29 +225,31 @@ function OnboardingPage({ onBack, onComplete }: OnboardingPageProps) {
         {isCompletionStep ? null : (
           <>
             <header className="onboarding-header">
-              <button
-                type="button"
-                className="onboarding-back"
-                onClick={handleBack}
-                aria-label="뒤로 가기"
-              >
-                <svg
-                  className="onboarding-back-icon"
-                  width="32"
-                  height="32"
-                  viewBox="0 0 24 24"
-                  fill="none"
-                  aria-hidden="true"
+              {currentStep > 0 ? (
+                <button
+                  type="button"
+                  className="onboarding-back"
+                  onClick={handleBack}
+                  aria-label="뒤로 가기"
                 >
-                  <path
-                    d="M15 18L9 12L15 6"
-                    stroke="#111111"
-                    strokeWidth="1"
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                  />
-                </svg>
-              </button>
+                  <svg
+                    className="onboarding-back-icon"
+                    width="32"
+                    height="32"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    aria-hidden="true"
+                  >
+                    <path
+                      d="M15 18L9 12L15 6"
+                      stroke="#111111"
+                      strokeWidth="1"
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                    />
+                  </svg>
+                </button>
+              ) : null}
             </header>
 
             <div
