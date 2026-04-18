@@ -39,6 +39,10 @@ const ACCOUNT_LANGUAGE_KEY = 'dojeon:account.language'
 const ACCOUNT_KOREAN_LEVEL_KEY = 'dojeon:account.koreanLevel'
 const ACCOUNT_DAILY_GOAL_KEY = 'dojeon:account.dailyGoal'
 const ACCOUNT_KOREAN_GOAL_KEY = 'dojeon:account.koreanGoal'
+const DEMO_LOGIN_EMAIL = 'demo@dojeon.ai'
+const DEMO_LOGIN_PASSWORD = 'Dojeon123!'
+const DEMO_INVALID_LOGIN_EMAIL = 'wrong@dojeon.ai'
+const DEMO_INVALID_LOGIN_PASSWORD = 'WrongDojeon123!'
 
 const readLocalStorageItem = (key: string) => {
   try {
@@ -502,11 +506,27 @@ function App() {
         <LoginPage
           onSignUp={() => setScreen('signup')}
           onLogin={(credentials) => {
+            const normalizedEmail = credentials.email.trim().toLowerCase()
+            const expectedEmail = (signupEmail || DEMO_LOGIN_EMAIL).trim().toLowerCase()
+            const expectedPassword = accountPassword || DEMO_LOGIN_PASSWORD
+            const isKnownInvalidDemoLogin =
+              normalizedEmail === DEMO_INVALID_LOGIN_EMAIL &&
+              credentials.password === DEMO_INVALID_LOGIN_PASSWORD
+            const isAuthenticated =
+              !isKnownInvalidDemoLogin &&
+              normalizedEmail === expectedEmail &&
+              credentials.password === expectedPassword
+
+            if (!isAuthenticated) {
+              return false
+            }
+
             setSignupEmail(credentials.email)
             setAccountPassword(credentials.password)
             writeLocalStorageItem(ACCOUNT_EMAIL_KEY, credentials.email)
             writeLocalStorageItem(ACCOUNT_PASSWORD_KEY, credentials.password)
             handleEnterAfterAuth()
+            return true
           }}
         />
       )}

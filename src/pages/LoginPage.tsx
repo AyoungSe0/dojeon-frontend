@@ -1,27 +1,50 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import './LoginPage.css'
 
 interface LoginPageProps {
   onSignUp: () => void
-  onLogin?: (credentials: { email: string; password: string }) => void
+  onLogin?: (credentials: { email: string; password: string }) => boolean
 }
 
 function LoginPage({ onSignUp, onLogin }: LoginPageProps) {
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
+  const [showLoginError, setShowLoginError] = useState(false)
+
+  useEffect(() => {
+    if (!showLoginError) {
+      return
+    }
+
+    const timer = window.setTimeout(() => {
+      setShowLoginError(false)
+    }, 3000)
+
+    return () => {
+      window.clearTimeout(timer)
+    }
+  }, [showLoginError])
 
   return (
     <main className="login-screen">
+      {showLoginError ? (
+        <div className="login-error-box" role="alert" aria-live="assertive">
+          Your ID or password is incorrect. Please enter the correct ID or password.
+        </div>
+      ) : null}
+
       <div className="login-profile" />
 
       <form
         className="login-form"
         onSubmit={(e) => {
           e.preventDefault()
-          onLogin?.({
+          const didLogin = onLogin?.({
             email: email.trim(),
             password,
           })
+
+          setShowLoginError(didLogin === false)
         }}
       >
         <label className="field-wrap">
@@ -30,7 +53,10 @@ function LoginPage({ onSignUp, onLogin }: LoginPageProps) {
             type="email"
             className="field"
             value={email}
-            onChange={(e) => setEmail(e.target.value)}
+            onChange={(e) => {
+              setEmail(e.target.value)
+              setShowLoginError(false)
+            }}
           />
         </label>
 
@@ -40,7 +66,10 @@ function LoginPage({ onSignUp, onLogin }: LoginPageProps) {
             type="password"
             className="field"
             value={password}
-            onChange={(e) => setPassword(e.target.value)}
+            onChange={(e) => {
+              setPassword(e.target.value)
+              setShowLoginError(false)
+            }}
           />
         </label>
 

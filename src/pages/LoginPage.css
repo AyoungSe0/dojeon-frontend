@@ -11,6 +11,24 @@
   box-sizing: border-box;
 }
 
+.login-error-box {
+  position: fixed;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  width: min(320px, calc(100% - 48px));
+  padding: 16px 18px;
+  border-radius: 10px;
+  background: rgba(0, 0, 0, 0.2);
+  color: #ff5f5f;
+  font-size: 16px;
+  font-weight: 500;
+  line-height: 1.4;
+  text-align: center;
+  z-index: 20;
+  box-sizing: border-box;
+}
+
 .login-profile {
   width: 182px;
   height: 182px;
