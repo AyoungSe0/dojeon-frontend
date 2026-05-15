@@ -132,7 +132,7 @@ function AccountInfoPage({
                   <input
                     type={item.inputType ?? 'text'}
                     className="account-info-input"
-                    value={item.inputValue ?? item.value}
+                    value={item.inputValue}
                     onChange={(e) => item.onChange(e.target.value)}
                     autoFocus
                   />

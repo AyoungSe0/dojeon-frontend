@@ -35,6 +35,7 @@ const trialLabel = `${trialTargetDays}-day Trial available`
 interface ClassPageProps {
   onOpenHome: () => void
   onOpenPractice: () => void
+  onOpenProfile: () => void
   onOpenCurrentLesson: (stage: LessonStage) => void
   onOpenLesson: (courseId: string, lessonId: string, initialPathId?: LessonPathId) => void
 }
@@ -43,7 +44,13 @@ const currentCourse = findCourseById(currentCourseId) ?? courseItems[0]
 const currentLesson =
   findLessonById(currentCourse, currentLessonId) ?? currentCourse.lessons[currentCourse.lessons.length - 1]
 
-function ClassPage({ onOpenHome, onOpenPractice, onOpenCurrentLesson, onOpenLesson }: ClassPageProps) {
+function ClassPage({
+  onOpenHome,
+  onOpenPractice,
+  onOpenProfile,
+  onOpenCurrentLesson,
+  onOpenLesson,
+}: ClassPageProps) {
   const [openCourseIds, setOpenCourseIds] = useState<string[]>([])
   const [isBottomLessonVisible, setIsBottomLessonVisible] = useState(true)
 
@@ -235,6 +242,10 @@ function ClassPage({ onOpenHome, onOpenPractice, onOpenCurrentLesson, onOpenLess
 
               if (tab.label === 'PRACTICE') {
                 onOpenPractice()
+              }
+
+              if (tab.label === 'PROFILE') {
+                onOpenProfile()
               }
             }}
           >

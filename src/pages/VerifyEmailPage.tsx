@@ -1,4 +1,5 @@
-import { ClipboardEvent, KeyboardEvent, useEffect, useRef, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
+import type { ClipboardEvent, KeyboardEvent } from 'react'
 import './VerifyEmailPage.css'
 import { requestEmailVerificationCode, verifyEmailCode } from '../services/auth'
 

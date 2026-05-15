@@ -1,5 +1,6 @@
 import './SignupPage.css'
-import { FormEvent, useState } from 'react'
+import { useState } from 'react'
+import type { FormEvent } from 'react'
 import checkIconGray from '../assets/check_icon_gray.svg'
 import checkIconGreen from '../assets/check_icon_green.svg'
 import checkIconWhite from '../assets/check_icon_white.svg'

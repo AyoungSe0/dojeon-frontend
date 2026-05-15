@@ -18,6 +18,7 @@ import VocabularyPage from './pages/VocabularyPage'
 import GrammarNotebookPage from './pages/GrammarNotebookPage'
 import LessonDetailPage from './pages/LessonDetailPage'
 import VocabularyLessonPage from './pages/VocabularyLessonPage'
+import ProfileMainPage from './pages/ProfileMainPage'
 import {
   courseItems,
   currentCourseId,
@@ -135,7 +136,7 @@ function App() {
     'splash' | 'login' | 'signup' | 'verify-email' | 'verify-success'
     | 'onboarding' | 'home' | 'class' | 'practice' | 'grammar-practice' | 'setting'
     | 'account-info' | 'preferences' | 'notebook' | 'vocabulary' | 'notebook-grammar'
-    | 'lesson-detail' | 'vocabulary-lesson'
+    | 'lesson-detail' | 'vocabulary-lesson' | 'profile-main'
   >('splash')
   const [signupEmail, setSignupEmail] = useState(getStoredAccountEmail)
   const [accountPassword, setAccountPassword] = useState(getStoredAccountPassword)
@@ -162,6 +163,7 @@ function App() {
   >(
     'class',
   )
+  const [settingBackScreen, setSettingBackScreen] = useState<'home' | 'profile-main'>('home')
 
   const selectedCourse = findCourseById(selectedCourseId) ?? courseItems[0]
   const selectedLesson =
@@ -322,7 +324,7 @@ function App() {
             setScreen('notebook')
           }}
           onOpenProfile={() => {
-            setScreen('setting')
+            setScreen('profile-main')
           }}
           onOpenPractice={() => {
             setScreen('practice')
@@ -340,6 +342,9 @@ function App() {
           }}
           onOpenPractice={() => {
             setScreen('practice')
+          }}
+          onOpenProfile={() => {
+            setScreen('profile-main')
           }}
           onOpenCurrentLesson={handleOpenCurrentLesson}
           onOpenLesson={(courseId, lessonId, initialPathId) => {
@@ -379,7 +384,7 @@ function App() {
       ) : screen === 'setting' ? (
         <SettingPage
           onBack={() => {
-            setScreen('home')
+            setScreen(settingBackScreen)
           }}
           onOpenAccountInfo={() => {
             setScreen('account-info')
@@ -453,7 +458,7 @@ function App() {
             setScreen('practice')
           }}
           onOpenProfile={() => {
-            setScreen('setting')
+            setScreen('profile-main')
           }}
         />
       ) : screen === 'vocabulary' ? (
@@ -480,7 +485,7 @@ function App() {
             setScreen('notebook')
           }}
           onOpenProfile={() => {
-            setScreen('setting')
+            setScreen('profile-main')
           }}
           onOpenNextGrammar={() => {
             setGrammarPracticeInitialStep('next-grammar')
@@ -492,6 +497,27 @@ function App() {
         <GrammarNotebookPage
           onBack={() => {
             setScreen('notebook')
+          }}
+        />
+      ) : screen === 'profile-main' ? (
+        <ProfileMainPage
+          nickname={userName}
+          username={signupEmail ? signupEmail.split('@')[0] : userName}
+          onOpenHome={() => {
+            setScreen('home')
+          }}
+          onOpenClass={() => {
+            setScreen('class')
+          }}
+          onOpenPractice={() => {
+            setScreen('practice')
+          }}
+          onOpenNotebook={() => {
+            setScreen('notebook')
+          }}
+          onOpenSetting={() => {
+            setSettingBackScreen('profile-main')
+            setScreen('setting')
           }}
         />
       ) : screen === 'grammar-practice' ? (

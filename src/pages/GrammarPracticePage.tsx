@@ -1228,7 +1228,7 @@ function GrammarPracticePage({
                     <p className="grammar-practice-reading-question-prompt">{question.prompt}</p>
                     {question.type === 'choice' ? (
                       <div className="grammar-practice-reading-options">
-                        {question.options.map((option) => (
+                        {question.options?.map((option) => (
                           <button
                             key={option}
                             type="button"
