@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react'
 import './App.css'
 import SplashPage from './pages/SplashPage'
 import LoginPage from './pages/LoginPage'
-import SignupPage from './pages/SignupPage'
+import SignupPage, { type SignupSubmission } from './pages/SignupPage'
 import VerifyEmailPage from './pages/VerifyEmailPage'
 import VerifySuccessPage from './pages/VerifySuccessPage'
 import OnboardingPage from './pages/OnboardingPage'
@@ -29,21 +29,28 @@ import {
   type LessonStage,
   type LessonPathId,
 } from './data/classLessons'
+import {
+  buildAuthSession,
+  clearStoredAuthSession,
+  getStoredAuthSession,
+  login,
+  logout,
+  saveAuthSession,
+  signup,
+  type AuthSession,
+  type AuthTokenData,
+} from './services/auth'
 
 const ONBOARDING_COMPLETED_KEY = 'dojeon:onboarding.completed'
 const ONBOARDING_USERNAME_KEY = 'dojeon:onboarding.username'
-const ACCOUNT_EMAIL_KEY = 'dojeon:account.email'
-const ACCOUNT_PASSWORD_KEY = 'dojeon:account.password'
+const ACCOUNT_OWNER_EMAIL_KEY = 'dojeon:account.ownerEmail'
+const LEGACY_ACCOUNT_EMAIL_KEY = 'dojeon:account.email'
 const ACCOUNT_AGE_RANGE_KEY = 'dojeon:account.ageRange'
 const ACCOUNT_PHONE_NUMBER_KEY = 'dojeon:account.phoneNumber'
 const ACCOUNT_LANGUAGE_KEY = 'dojeon:account.language'
 const ACCOUNT_KOREAN_LEVEL_KEY = 'dojeon:account.koreanLevel'
 const ACCOUNT_DAILY_GOAL_KEY = 'dojeon:account.dailyGoal'
 const ACCOUNT_KOREAN_GOAL_KEY = 'dojeon:account.koreanGoal'
-const DEMO_LOGIN_EMAIL = 'demo@dojeon.ai'
-const DEMO_LOGIN_PASSWORD = 'Dojeon123!'
-const DEMO_INVALID_LOGIN_EMAIL = 'wrong@dojeon.ai'
-const DEMO_INVALID_LOGIN_PASSWORD = 'WrongDojeon123!'
 
 const readLocalStorageItem = (key: string) => {
   try {
@@ -82,11 +89,13 @@ const saveOnboardingUsername = (name: string) => {
   writeLocalStorageItem(ONBOARDING_USERNAME_KEY, name)
 }
 
+const normalizeStoredEmail = (value: string) => value.trim().toLowerCase()
+
 const clearOnboardingStorage = () => {
   removeLocalStorageItem(ONBOARDING_COMPLETED_KEY)
   removeLocalStorageItem(ONBOARDING_USERNAME_KEY)
-  removeLocalStorageItem(ACCOUNT_EMAIL_KEY)
-  removeLocalStorageItem(ACCOUNT_PASSWORD_KEY)
+  removeLocalStorageItem(ACCOUNT_OWNER_EMAIL_KEY)
+  removeLocalStorageItem(LEGACY_ACCOUNT_EMAIL_KEY)
   removeLocalStorageItem(ACCOUNT_AGE_RANGE_KEY)
   removeLocalStorageItem(ACCOUNT_PHONE_NUMBER_KEY)
   removeLocalStorageItem(ACCOUNT_LANGUAGE_KEY)
@@ -95,12 +104,24 @@ const clearOnboardingStorage = () => {
   removeLocalStorageItem(ACCOUNT_KOREAN_GOAL_KEY)
 }
 
-const getStoredAccountEmail = () => {
-  return readLocalStorageItem(ACCOUNT_EMAIL_KEY) ?? ''
-}
+const syncLocalAccountOwner = (email: string) => {
+  const normalizedEmail = normalizeStoredEmail(email)
+  const currentOwner = normalizeStoredEmail(
+    readLocalStorageItem(ACCOUNT_OWNER_EMAIL_KEY) ??
+      readLocalStorageItem(LEGACY_ACCOUNT_EMAIL_KEY) ??
+      '',
+  )
+  const didSwitchAccount = Boolean(currentOwner && currentOwner !== normalizedEmail)
 
-const getStoredAccountPassword = () => {
-  return readLocalStorageItem(ACCOUNT_PASSWORD_KEY) ?? ''
+  if (didSwitchAccount) {
+    clearOnboardingStorage()
+  }
+
+  if (normalizedEmail) {
+    writeLocalStorageItem(ACCOUNT_OWNER_EMAIL_KEY, normalizedEmail)
+  }
+
+  return didSwitchAccount
 }
 
 const getStoredAgeRange = () => {
@@ -138,8 +159,8 @@ function App() {
     | 'account-info' | 'preferences' | 'notebook' | 'vocabulary' | 'notebook-grammar'
     | 'lesson-detail' | 'vocabulary-lesson' | 'profile-main'
   >('splash')
-  const [signupEmail, setSignupEmail] = useState(getStoredAccountEmail)
-  const [accountPassword, setAccountPassword] = useState(getStoredAccountPassword)
+  const [authSession, setAuthSession] = useState<AuthSession | null>(getStoredAuthSession)
+  const [pendingSignup, setPendingSignup] = useState<SignupSubmission | null>(null)
   const [userName, setUserName] = useState(getOnboardingUsername)
   const [ageRange, setAgeRange] = useState(getStoredAgeRange)
   const [phoneNumber, setPhoneNumber] = useState(getStoredPhoneNumber)
@@ -147,6 +168,7 @@ function App() {
   const [koreanLevel, setKoreanLevel] = useState(getStoredKoreanLevel)
   const [dailyGoal, setDailyGoal] = useState(getStoredDailyGoal)
   const [koreanGoal, setKoreanGoal] = useState(getStoredKoreanGoal)
+  const [isSigningOut, setIsSigningOut] = useState(false)
   const [selectedCourseId, setSelectedCourseId] = useState(currentCourseId)
   const [selectedLessonId, setSelectedLessonId] = useState(currentLessonId)
   const [selectedLessonPathId, setSelectedLessonPathId] = useState<LessonPathId>(
@@ -168,20 +190,18 @@ function App() {
   const selectedCourse = findCourseById(selectedCourseId) ?? courseItems[0]
   const selectedLesson =
     findLessonById(selectedCourse, selectedLessonId) ?? selectedCourse.lessons[0]
+  const currentEmail = authSession?.email ?? pendingSignup?.email ?? ''
+  const currentUsername = currentEmail ? currentEmail.split('@')[0] : userName
 
-  useEffect(() => {
-    if (screen !== 'splash') {
-      return
-    }
-
-    const timer = window.setTimeout(() => {
-      setScreen('login')
-    }, 1200)
-
-    return () => {
-      window.clearTimeout(timer)
-    }
-  }, [screen])
+  const resetLocalProfileState = () => {
+    setUserName('Jinri')
+    setAgeRange('')
+    setPhoneNumber('')
+    setLanguage('')
+    setKoreanLevel('')
+    setDailyGoal('')
+    setKoreanGoal('')
+  }
 
   const hasCompletedOnboarding =
     readLocalStorageItem(ONBOARDING_COMPLETED_KEY) === 'true'
@@ -193,6 +213,68 @@ function App() {
     }
 
     setScreen('onboarding')
+  }
+
+  const persistAuthSession = (email: string, tokenData: AuthTokenData) => {
+    const didSwitchAccount = syncLocalAccountOwner(email)
+
+    if (didSwitchAccount) {
+      resetLocalProfileState()
+    }
+
+    const nextSession = buildAuthSession(email, tokenData)
+    saveAuthSession(nextSession)
+    setAuthSession(nextSession)
+  }
+
+  useEffect(() => {
+    if (screen !== 'splash') {
+      return
+    }
+
+    const timer = window.setTimeout(() => {
+      if (authSession) {
+        setScreen(hasCompletedOnboarding ? 'home' : 'onboarding')
+        return
+      }
+
+      setScreen('login')
+    }, 1200)
+
+    return () => {
+      window.clearTimeout(timer)
+    }
+  }, [authSession, hasCompletedOnboarding, screen])
+
+  useEffect(() => {
+    if (!authSession?.email) {
+      return
+    }
+
+    const didSwitchAccount = syncLocalAccountOwner(authSession.email)
+
+    if (didSwitchAccount) {
+      resetLocalProfileState()
+    }
+  }, [authSession?.email])
+
+  const handleLogout = async () => {
+    setIsSigningOut(true)
+
+    try {
+      if (authSession?.refreshToken) {
+        await logout({ refreshToken: authSession.refreshToken })
+      }
+    } catch {
+      // Local sign-out still proceeds when the logout request fails.
+    } finally {
+      clearStoredAuthSession()
+      setAuthSession(null)
+      setPendingSignup(null)
+      setSettingBackScreen('home')
+      setScreen('login')
+      setIsSigningOut(false)
+    }
   }
 
   const handleOpenLessonPath = (
@@ -246,8 +328,9 @@ function App() {
           }}
           onClick={() => {
             clearOnboardingStorage()
-            setSignupEmail('')
-            setAccountPassword('')
+            clearStoredAuthSession()
+            setAuthSession(null)
+            setPendingSignup(null)
             setUserName('Jinri')
             setAgeRange('')
             setPhoneNumber('')
@@ -267,25 +350,34 @@ function App() {
       ) : screen === 'signup' ? (
         <SignupPage
           onBack={() => setScreen('login')}
-          onSignupSuccess={(email, password) => {
-            setSignupEmail(email)
-            setAccountPassword(password)
-            writeLocalStorageItem(ACCOUNT_EMAIL_KEY, email)
-            writeLocalStorageItem(ACCOUNT_PASSWORD_KEY, password)
-            removeLocalStorageItem(ONBOARDING_COMPLETED_KEY)
+          onSignupSuccess={(payload) => {
+            setPendingSignup(payload)
             setScreen('verify-email')
           }}
         />
       ) : screen === 'verify-email' ? (
         <VerifyEmailPage
-          email={signupEmail}
+          email={pendingSignup?.email ?? ''}
           onBack={() => setScreen('signup')}
-          onVerifySuccess={() => setScreen('verify-success')}
+          onVerifySuccess={async (verifyToken) => {
+            if (!pendingSignup) {
+              throw new Error('회원가입 정보가 없습니다. 다시 시도해 주세요.')
+            }
+
+            const tokenData = await signup({
+              verifyToken,
+              ...pendingSignup,
+            })
+
+            persistAuthSession(pendingSignup.email, tokenData)
+            setPendingSignup(null)
+            setScreen('verify-success')
+          }}
         />
       ) : screen === 'verify-success' ? (
         <VerifySuccessPage
           onStartLearning={() => {
-            setScreen('login')
+            handleEnterAfterAuth()
           }}
         />
       ) : screen === 'onboarding' ? (
@@ -334,6 +426,15 @@ function App() {
             setGrammarPracticeBackScreen('home')
             setScreen('grammar-practice')
           }}
+          onOpenTodaysLesson={() => {
+            const nextCourse = findCourseById(currentCourseId) ?? courseItems[0]
+            const nextLesson = findLessonById(nextCourse, currentLessonId) ?? nextCourse.lessons[0]
+
+            setSelectedCourseId(nextCourse.id)
+            setSelectedLessonId(nextLesson.id)
+            setSelectedLessonPathId('grammar')
+            setScreen('lesson-detail')
+          }}
         />
       ) : screen === 'class' ? (
         <ClassPage
@@ -359,6 +460,7 @@ function App() {
         />
       ) : screen === 'lesson-detail' ? (
         <LessonDetailPage
+          key={`${selectedCourse.id}:${selectedLesson.id}:${selectedLessonPathId}`}
           course={selectedCourse}
           selectedLessonId={selectedLesson.id}
           initialPathId={selectedLessonPathId}
@@ -392,28 +494,28 @@ function App() {
           onOpenPreferences={() => {
             setScreen('preferences')
           }}
+          onSignOut={() => {
+            void handleLogout()
+          }}
+          isSigningOut={isSigningOut}
         />
       ) : screen === 'account-info' ? (
         <AccountInfoPage
-          email={signupEmail}
-          username={signupEmail ? signupEmail.split('@')[0] : userName}
+          email={authSession?.email ?? ''}
+          username={currentUsername}
           nickname={userName}
-          password={accountPassword}
           phoneNumber={phoneNumber}
           ageGroupOrBirthday={ageRange}
           onSave={(values) => {
             const nextNickname = values.nickname.trim() || 'Jinri'
-            const nextPassword = values.password
             const nextPhoneNumber = values.phoneNumber.trim()
             const nextAgeGroupOrBirthday = values.ageGroupOrBirthday.trim()
 
             setUserName(nextNickname)
-            setAccountPassword(nextPassword)
             setPhoneNumber(nextPhoneNumber)
             setAgeRange(nextAgeGroupOrBirthday)
 
             saveOnboardingUsername(nextNickname)
-            writeLocalStorageItem(ACCOUNT_PASSWORD_KEY, nextPassword)
             writeLocalStorageItem(ACCOUNT_PHONE_NUMBER_KEY, nextPhoneNumber)
             writeLocalStorageItem(ACCOUNT_AGE_RANGE_KEY, nextAgeGroupOrBirthday)
           }}
@@ -502,7 +604,7 @@ function App() {
       ) : screen === 'profile-main' ? (
         <ProfileMainPage
           nickname={userName}
-          username={signupEmail ? signupEmail.split('@')[0] : userName}
+          username={currentUsername}
           onOpenHome={() => {
             setScreen('home')
           }}
@@ -531,28 +633,11 @@ function App() {
       ) : (
         <LoginPage
           onSignUp={() => setScreen('signup')}
-          onLogin={(credentials) => {
-            const normalizedEmail = credentials.email.trim().toLowerCase()
-            const expectedEmail = (signupEmail || DEMO_LOGIN_EMAIL).trim().toLowerCase()
-            const expectedPassword = accountPassword || DEMO_LOGIN_PASSWORD
-            const isKnownInvalidDemoLogin =
-              normalizedEmail === DEMO_INVALID_LOGIN_EMAIL &&
-              credentials.password === DEMO_INVALID_LOGIN_PASSWORD
-            const isAuthenticated =
-              !isKnownInvalidDemoLogin &&
-              normalizedEmail === expectedEmail &&
-              credentials.password === expectedPassword
-
-            if (!isAuthenticated) {
-              return false
-            }
-
-            setSignupEmail(credentials.email)
-            setAccountPassword(credentials.password)
-            writeLocalStorageItem(ACCOUNT_EMAIL_KEY, credentials.email)
-            writeLocalStorageItem(ACCOUNT_PASSWORD_KEY, credentials.password)
+          onLogin={async (credentials) => {
+            const tokenData = await login(credentials)
+            persistAuthSession(credentials.email, tokenData)
+            setPendingSignup(null)
             handleEnterAfterAuth()
-            return true
           }}
         />
       )}

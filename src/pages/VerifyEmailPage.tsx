@@ -6,11 +6,11 @@ import { requestEmailVerificationCode, verifyEmailCode } from '../services/auth'
 interface VerifyEmailPageProps {
   onBack: () => void
   email: string
-  onVerifySuccess: () => void
+  onVerifySuccess: (verifyToken: string) => Promise<void>
 }
 
 function VerifyEmailPage({ onBack, email, onVerifySuccess }: VerifyEmailPageProps) {
-  const [code, setCode] = useState<string[]>(['', '', '', ''])
+  const [code, setCode] = useState<string[]>(['', '', '', '', '', ''])
   const [remainingSeconds, setRemainingSeconds] = useState<number>(120)
   const inputRefs = useRef<Array<HTMLInputElement | null>>([])
   const [isResending, setIsResending] = useState(false)
@@ -27,9 +27,10 @@ function VerifyEmailPage({ onBack, email, onVerifySuccess }: VerifyEmailPageProp
     const next = [...code]
     next[index] = digit
     setVerifyError('')
+    lastSubmittedCode.current = ''
     setCode(next)
 
-    if (digit && index < 3) {
+    if (digit && index < code.length - 1) {
       inputRefs.current[index + 1]?.focus()
     }
 
@@ -40,31 +41,32 @@ function VerifyEmailPage({ onBack, email, onVerifySuccess }: VerifyEmailPageProp
   }
 
   const handleCodePaste = (e: ClipboardEvent<HTMLInputElement>) => {
-    const pasted = e.clipboardData.getData('text').replace(/\D/g, '').slice(0, 4)
+    const pasted = e.clipboardData.getData('text').replace(/\D/g, '').slice(0, code.length)
     if (!pasted) {
       return
     }
     e.preventDefault()
-    const next = ['', '', '', '']
+    const next = Array.from({ length: code.length }, () => '')
     pasted.split('').forEach((char, idx) => {
-      if (idx < 4) {
+      if (idx < code.length) {
         next[idx] = char
       }
     })
     setCode(next)
     setVerifyError('')
-    if (pasted.length < 4) {
+    lastSubmittedCode.current = ''
+    if (pasted.length < code.length) {
       inputRefs.current[pasted.length]?.focus()
     } else {
-      inputRefs.current[3]?.focus()
+      inputRefs.current[code.length - 1]?.focus()
     }
-    if (pasted.length === 4) {
+    if (pasted.length === code.length) {
       void verifyCode(next.join(''))
     }
   }
 
   const verifyCode = async (nextCode: string) => {
-    if (!nextCode || nextCode.length < 4) {
+    if (!nextCode || nextCode.length < code.length) {
       return
     }
     if (isVerifying || lastSubmittedCode.current === nextCode) {
@@ -76,12 +78,13 @@ function VerifyEmailPage({ onBack, email, onVerifySuccess }: VerifyEmailPageProp
     setVerifyError('')
 
     try {
-      await verifyEmailCode(email, nextCode)
-      onVerifySuccess()
+      const result = await verifyEmailCode(email, nextCode)
+      await onVerifySuccess(result.verifyToken)
     } catch (error) {
       const message =
         error instanceof Error ? error.message : '인증 코드 확인에 실패했습니다.'
       setVerifyError(message)
+      lastSubmittedCode.current = ''
       setIsVerifying(false)
       return
     }
@@ -128,6 +131,9 @@ function VerifyEmailPage({ onBack, email, onVerifySuccess }: VerifyEmailPageProp
 
     try {
       await requestEmailVerificationCode(email)
+      setCode(Array.from({ length: code.length }, () => ''))
+      setVerifyError('')
+      lastSubmittedCode.current = ''
       setRemainingSeconds(120)
     } catch (error) {
       const message =
@@ -184,6 +190,7 @@ function VerifyEmailPage({ onBack, email, onVerifySuccess }: VerifyEmailPageProp
                 className="verify-code-input"
                 aria-label={`인증번호 ${index + 1}번째`}
                 autoComplete="one-time-code"
+                disabled={isVerifying || isResending}
               />
             </div>
           ))}
@@ -203,7 +210,7 @@ function VerifyEmailPage({ onBack, email, onVerifySuccess }: VerifyEmailPageProp
             type="button"
             className="verify-email-resend-action"
             onClick={handleResendCode}
-            disabled={isResending}
+            disabled={isResending || isVerifying}
           >
             {isResending ? 'Sending...' : 'Resend code'}
           </button>
