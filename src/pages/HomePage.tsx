@@ -21,6 +21,7 @@ interface HomePageProps {
   onOpenProfile: () => void
   onOpenPractice: () => void
   onOpenGrammarPractice: () => void
+  onOpenTodaysLesson: () => void
 }
 
 function HomePage({
@@ -30,6 +31,7 @@ function HomePage({
   onOpenProfile,
   onOpenPractice,
   onOpenGrammarPractice,
+  onOpenTodaysLesson,
 }: HomePageProps) {
   const [selectedGoalType, setSelectedGoalType] = useState<'today' | 'week'>('today')
   const goalData = {
@@ -137,7 +139,7 @@ function HomePage({
               <span className="lesson-apply">먹을까요?</span>
             </p>
           </div>
-          <button className="start-btn" type="button">
+          <button className="start-btn" type="button" onClick={onOpenTodaysLesson}>
             START
           </button>
         </section>
