@@ -19,6 +19,7 @@ import GrammarNotebookPage from './pages/GrammarNotebookPage'
 import LessonDetailPage from './pages/LessonDetailPage'
 import VocabularyLessonPage from './pages/VocabularyLessonPage'
 import ProfileMainPage from './pages/ProfileMainPage'
+import ProfileAchievementsPage from './pages/ProfileAchievementsPage'
 import {
   courseItems,
   currentCourseId,
@@ -136,7 +137,7 @@ function App() {
     'splash' | 'login' | 'signup' | 'verify-email' | 'verify-success'
     | 'onboarding' | 'home' | 'class' | 'practice' | 'grammar-practice' | 'setting'
     | 'account-info' | 'preferences' | 'notebook' | 'vocabulary' | 'notebook-grammar'
-    | 'lesson-detail' | 'vocabulary-lesson' | 'profile-main'
+    | 'lesson-detail' | 'vocabulary-lesson' | 'profile-main' | 'profile-achievements'
   >('splash')
   const [signupEmail, setSignupEmail] = useState(getStoredAccountEmail)
   const [accountPassword, setAccountPassword] = useState(getStoredAccountPassword)
@@ -518,6 +519,15 @@ function App() {
           onOpenSetting={() => {
             setSettingBackScreen('profile-main')
             setScreen('setting')
+          }}
+          onOpenAchievements={() => {
+            setScreen('profile-achievements')
+          }}
+        />
+      ) : screen === 'profile-achievements' ? (
+        <ProfileAchievementsPage
+          onBack={() => {
+            setScreen('profile-main')
           }}
         />
       ) : screen === 'grammar-practice' ? (

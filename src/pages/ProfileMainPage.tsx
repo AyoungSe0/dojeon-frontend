@@ -5,6 +5,7 @@ import fileIcon from '../assets/file.svg'
 import bookOpenIcon from '../assets/book-open.svg'
 import profileIcon from '../assets/user.svg'
 import settingIcon from '../assets/setting_icon.svg'
+import { formatAchievementDate, profileMainMockData } from '../data/profile'
 
 const tabs = [
   { icon: homeIcon, label: 'HOME' },
@@ -13,120 +14,6 @@ const tabs = [
   { icon: bookOpenIcon, label: 'NOTEBOOK' },
   { icon: profileIcon, label: 'PROFILE' },
 ]
-
-interface ProfileUser {
-  userId: number
-  email: string
-  username: string
-  nickname: string
-  phoneNumber: string | null
-  birthday: string | null
-  profileImgUrl: string | null
-  joinedYear: number
-  subscriptionTier: string
-}
-
-interface ProfileSettings {
-  motherLanguage: string | null
-  proficiencyLevel: string | null
-  dailyGoalMin: number | null
-  learningGoal: string | null
-  isPushNotificationOn: boolean
-  isMarketingAgreed: boolean
-}
-
-interface ProfileRecentCourse {
-  courseId: number
-  lessonId: number
-  sectionId: number
-  courseTitle: string
-  lessonTitle: string
-  sectionSubtitle: string
-}
-
-interface ProfileStats {
-  totalCompletedLessons: number
-  totalStudyMin: number
-  currentStreak: number
-  bestStreak: number
-}
-
-interface ProfileAttendance {
-  year: number
-  month: number
-  activeDays: number[]
-}
-
-interface ProfileAchievement {
-  badgeId: number
-  title: string
-  imageUrl: string | null
-  earnedAt: string
-}
-
-interface ProfileMainData {
-  user: ProfileUser
-  settings: ProfileSettings
-  recentCourse: ProfileRecentCourse | null
-  stats: ProfileStats
-  attendance: ProfileAttendance
-  recentAchievements: ProfileAchievement[]
-}
-
-const profileMainMockData: ProfileMainData = {
-  user: {
-    userId: 100,
-    email: 'example@email.com',
-    username: 'username',
-    nickname: 'nickname',
-    phoneNumber: '010-0000-0000',
-    birthday: '2000-03-10',
-    profileImgUrl: null,
-    joinedYear: 2026,
-    subscriptionTier: 'FREE',
-  },
-  settings: {
-    motherLanguage: 'EN',
-    proficiencyLevel: 'LEVEL_2',
-    dailyGoalMin: 15,
-    learningGoal: 'HOBBY',
-    isPushNotificationOn: true,
-    isMarketingAgreed: false,
-  },
-  recentCourse: {
-    courseId: 1,
-    lessonId: 105,
-    sectionId: 505,
-    courseTitle: 'Course 1',
-    lessonTitle: 'lesson 5',
-    sectionSubtitle: 'Grammar 3 을까요? 1)',
-  },
-  stats: {
-    totalCompletedLessons: 24,
-    totalStudyMin: 80,
-    currentStreak: 3,
-    bestStreak: 7,
-  },
-  attendance: {
-    year: 2026,
-    month: 3,
-    activeDays: [1, 2, 3],
-  },
-  recentAchievements: [
-    {
-      badgeId: 10,
-      title: 'Daily streak',
-      imageUrl: null,
-      earnedAt: '2026-03-28',
-    },
-    {
-      badgeId: 11,
-      title: 'Daily streak',
-      imageUrl: null,
-      earnedAt: '2026-03-28',
-    },
-  ],
-}
 
 const monthNames = [
   'January',
@@ -164,6 +51,7 @@ interface ProfileMainPageProps {
   onOpenPractice: () => void
   onOpenNotebook: () => void
   onOpenSetting: () => void
+  onOpenAchievements: () => void
 }
 
 const formatStudyTime = (totalMinutes: number) => {
@@ -181,20 +69,6 @@ const formatStudyTime = (totalMinutes: number) => {
   return `${hours}h ${minutes}m`
 }
 
-const formatAchievementDate = (date: string) => {
-  const parsedDate = new Date(date)
-
-  if (Number.isNaN(parsedDate.getTime())) {
-    return date
-  }
-
-  return parsedDate.toLocaleDateString('en-US', {
-    month: 'short',
-    day: 'numeric',
-    year: 'numeric',
-  })
-}
-
 function ProfileMainPage({
   nickname,
   username,
@@ -203,6 +77,7 @@ function ProfileMainPage({
   onOpenPractice,
   onOpenNotebook,
   onOpenSetting,
+  onOpenAchievements,
 }: ProfileMainPageProps) {
   const profileData = {
     ...profileMainMockData,
@@ -323,7 +198,11 @@ function ProfileMainPage({
         <section className="profile-main-section">
           <div className="profile-main-section-header">
             <h2 className="profile-main-section-title">Achievements</h2>
-            <button type="button" className="profile-main-section-link">
+            <button
+              type="button"
+              className="profile-main-section-link"
+              onClick={onOpenAchievements}
+            >
               see more
             </button>
           </div>
