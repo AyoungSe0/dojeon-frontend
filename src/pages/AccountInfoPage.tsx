@@ -10,9 +10,12 @@ interface AccountInfoPageProps {
   ageGroupOrBirthday: string
   onSave: (values: {
     nickname: string
-    password: string
     phoneNumber: string
     ageGroupOrBirthday: string
+    passwordChange?: {
+      currentPassword: string
+      newPassword: string
+    }
   }) => void
   onBack: () => void
 }
@@ -28,27 +31,34 @@ function AccountInfoPage({
   onBack,
 }: AccountInfoPageProps) {
   const [draftNickname, setDraftNickname] = useState(nickname)
-  const [draftPassword, setDraftPassword] = useState(password)
+  const [currentPassword, setCurrentPassword] = useState('')
+  const [newPassword, setNewPassword] = useState('')
   const [draftPhoneNumber, setDraftPhoneNumber] = useState(phoneNumber)
   const [draftAgeGroupOrBirthday, setDraftAgeGroupOrBirthday] = useState(ageGroupOrBirthday)
+  const [passwordMessage, setPasswordMessage] = useState('')
   const [editing, setEditing] = useState({
     nickname: false,
     password: false,
     phoneNumber: false,
     ageGroupOrBirthday: false,
   })
+  const isPasswordChangeReady = currentPassword.trim().length > 0 && newPassword.trim().length > 0
   const hasPendingChanges =
     draftNickname !== nickname ||
-    draftPassword !== password ||
+    isPasswordChangeReady ||
     draftPhoneNumber !== phoneNumber ||
     draftAgeGroupOrBirthday !== ageGroupOrBirthday
   const toggleEditing = (
     key: 'nickname' | 'password' | 'phoneNumber' | 'ageGroupOrBirthday',
   ) => {
+    if (key === 'password') {
+      setPasswordMessage('')
+    }
+
     setEditing((prev) => ({ ...prev, [key]: !prev[key] }))
   }
 
-  const maskedPassword = draftPassword ? '*'.repeat(Math.max(draftPassword.length, 8)) : '-'
+  const maskedPassword = password ? '*'.repeat(Math.max(password.length, 8)) : '********'
   const items = [
     { label: 'Email', value: email || '-' },
     { label: 'Username', value: username || '-' },
@@ -67,9 +77,7 @@ function AccountInfoPage({
       editable: true,
       isEditing: editing.password,
       onEdit: () => toggleEditing('password'),
-      onChange: (value: string) => setDraftPassword(value),
-      inputType: 'password',
-      inputValue: draftPassword,
+      usesPasswordFields: true,
     },
     {
       label: 'Phone number',
@@ -129,13 +137,37 @@ function AccountInfoPage({
               </div>
               <div className="account-info-value-row">
                 {'editable' in item && item.editable && item.isEditing ? (
-                  <input
-                    type={item.inputType ?? 'text'}
-                    className="account-info-input"
-                    value={item.inputValue}
-                    onChange={(e) => item.onChange(e.target.value)}
-                    autoFocus
-                  />
+                  'usesPasswordFields' in item && item.usesPasswordFields ? (
+                    <div className="account-info-password-fields">
+                      <input
+                        type="password"
+                        className="account-info-input"
+                        value={currentPassword}
+                        onChange={(e) => setCurrentPassword(e.target.value)}
+                        placeholder="Current password"
+                        autoFocus
+                      />
+                      <input
+                        type="password"
+                        className="account-info-input"
+                        value={newPassword}
+                        onChange={(e) => setNewPassword(e.target.value)}
+                        placeholder="New password"
+                      />
+                    </div>
+                  ) : (
+                    <input
+                      type="text"
+                      className="account-info-input"
+                      value={'inputValue' in item ? item.inputValue : ''}
+                      onChange={(e) => {
+                        if ('onChange' in item && item.onChange) {
+                          item.onChange(e.target.value)
+                        }
+                      }}
+                      autoFocus
+                    />
+                  )
                 ) : (
                   <p className="account-info-value">{item.value}</p>
                 )}
@@ -149,6 +181,9 @@ function AccountInfoPage({
                   </button>
                 ) : null}
               </div>
+              {item.label === 'Password' && passwordMessage ? (
+                <p className="account-info-message">{passwordMessage}</p>
+              ) : null}
             </article>
           ))}
         </section>
@@ -158,12 +193,25 @@ function AccountInfoPage({
             type="button"
             className="account-info-save-button"
             onClick={() => {
+              if (editing.password && !isPasswordChangeReady) {
+                setPasswordMessage('Enter current and new password.')
+                return
+              }
+
               onSave({
                 nickname: draftNickname,
-                password: draftPassword,
                 phoneNumber: draftPhoneNumber,
                 ageGroupOrBirthday: draftAgeGroupOrBirthday,
+                passwordChange: isPasswordChangeReady
+                  ? {
+                      currentPassword: currentPassword.trim(),
+                      newPassword: newPassword.trim(),
+                    }
+                  : undefined,
               })
+              setCurrentPassword('')
+              setNewPassword('')
+              setPasswordMessage('')
               setEditing({
                 nickname: false,
                 password: false,

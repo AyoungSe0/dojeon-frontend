@@ -5,6 +5,7 @@ import fileIcon from '../assets/file.svg'
 import bookOpenIcon from '../assets/book-open.svg'
 import profileIcon from '../assets/user.svg'
 import settingIcon from '../assets/setting_icon.svg'
+import { useUserMe } from '../hooks/useUserMe'
 
 const tabs = [
   { icon: homeIcon, label: 'HOME' },
@@ -195,6 +196,16 @@ const formatAchievementDate = (date: string) => {
   })
 }
 
+const getJoinedYear = (createdAt: string) => {
+  const parsedDate = new Date(createdAt)
+
+  if (Number.isNaN(parsedDate.getTime())) {
+    return new Date().getFullYear()
+  }
+
+  return parsedDate.getFullYear()
+}
+
 function ProfileMainPage({
   nickname,
   username,
@@ -204,14 +215,50 @@ function ProfileMainPage({
   onOpenNotebook,
   onOpenSetting,
 }: ProfileMainPageProps) {
-  const profileData = {
-    ...profileMainMockData,
-    user: {
-      ...profileMainMockData.user,
-      nickname: nickname.trim() || profileMainMockData.user.nickname,
-      username: username.trim() || profileMainMockData.user.username,
-    },
-  }
+  const { data: userMe } = useUserMe()
+  const profileData: ProfileMainData = userMe
+    ? {
+        user: {
+          userId: Number(userMe.profile.userId),
+          email: userMe.profile.email,
+          username: userMe.profile.username,
+          nickname: userMe.profile.nickname,
+          phoneNumber: userMe.profile.phoneNumber,
+          birthday: userMe.profile.birthday,
+          profileImgUrl: userMe.profile.profileImgUrl,
+          joinedYear: getJoinedYear(userMe.profile.createdAt),
+          subscriptionTier: userMe.profile.subscriptionTier,
+        },
+        settings: {
+          motherLanguage: userMe.profile.motherLanguage,
+          proficiencyLevel: userMe.profile.proficiencyLevel,
+          dailyGoalMin: userMe.profile.dailyGoalMin,
+          learningGoal: userMe.profile.learningGoal,
+          isPushNotificationOn: userMe.profile.isPushNotificationOn,
+          isMarketingAgreed: userMe.profile.isMarketingAgreed,
+        },
+        recentCourse: userMe.recentCourse
+          ? {
+              courseId: userMe.recentCourse.courseId,
+              lessonId: userMe.recentCourse.lessonId,
+              sectionId: userMe.recentCourse.sectionId,
+              courseTitle: userMe.recentCourse.courseTitle,
+              lessonTitle: userMe.recentCourse.lessonTitle,
+              sectionSubtitle: userMe.recentCourse.sectionTitle,
+            }
+          : null,
+        stats: userMe.stats,
+        attendance: userMe.attendance,
+        recentAchievements: userMe.recentAchievements,
+      }
+    : {
+        ...profileMainMockData,
+        user: {
+          ...profileMainMockData.user,
+          nickname: nickname.trim() || profileMainMockData.user.nickname,
+          username: username.trim() || profileMainMockData.user.username,
+        },
+      }
   const { user, recentCourse, stats, attendance, recentAchievements } = profileData
   const calendarDays = getCalendarDays(attendance.year, attendance.month)
   const calendarTitle = `${monthNames[attendance.month - 1]} ${attendance.year}`

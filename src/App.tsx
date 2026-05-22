@@ -19,6 +19,8 @@ import GrammarNotebookPage from './pages/GrammarNotebookPage'
 import LessonDetailPage from './pages/LessonDetailPage'
 import VocabularyLessonPage from './pages/VocabularyLessonPage'
 import ProfileMainPage from './pages/ProfileMainPage'
+import { useUpdateUserMe } from './hooks/useUpdateUserMe'
+import { useChangeUserPassword } from './hooks/useChangeUserPassword'
 import {
   courseItems,
   currentCourseId,
@@ -131,7 +133,14 @@ const initialSelectedCourse = findCourseById(currentCourseId) ?? courseItems[0]
 const initialSelectedLesson =
   findLessonById(initialSelectedCourse, currentLessonId) ?? initialSelectedCourse.lessons[0]
 
+const parseDailyGoalMin = (value: string) => {
+  const [minutes] = value.match(/\d+/) ?? []
+  return minutes ? Number(minutes) : undefined
+}
+
 function App() {
+  const updateUserMeMutation = useUpdateUserMe()
+  const changeUserPasswordMutation = useChangeUserPassword()
   const [screen, setScreen] = useState<
     'splash' | 'login' | 'signup' | 'verify-email' | 'verify-success'
     | 'onboarding' | 'home' | 'class' | 'practice' | 'grammar-practice' | 'setting'
@@ -311,6 +320,14 @@ function App() {
             writeLocalStorageItem(ACCOUNT_DAILY_GOAL_KEY, savedDailyGoal)
             writeLocalStorageItem(ACCOUNT_KOREAN_GOAL_KEY, savedKoreanGoal)
             markOnboardingComplete()
+            updateUserMeMutation.mutate({
+              nickname: savedName,
+              ageGroup: savedAgeRange,
+              motherLanguage: savedLanguage,
+              proficiencyLevel: savedKoreanLevel,
+              dailyGoalMin: parseDailyGoalMin(savedDailyGoal),
+              learningGoal: savedKoreanGoal,
+            })
             setScreen('home')
           }}
         />
@@ -403,19 +420,32 @@ function App() {
           ageGroupOrBirthday={ageRange}
           onSave={(values) => {
             const nextNickname = values.nickname.trim() || 'Jinri'
-            const nextPassword = values.password
             const nextPhoneNumber = values.phoneNumber.trim()
             const nextAgeGroupOrBirthday = values.ageGroupOrBirthday.trim()
 
             setUserName(nextNickname)
-            setAccountPassword(nextPassword)
             setPhoneNumber(nextPhoneNumber)
             setAgeRange(nextAgeGroupOrBirthday)
 
             saveOnboardingUsername(nextNickname)
-            writeLocalStorageItem(ACCOUNT_PASSWORD_KEY, nextPassword)
             writeLocalStorageItem(ACCOUNT_PHONE_NUMBER_KEY, nextPhoneNumber)
             writeLocalStorageItem(ACCOUNT_AGE_RANGE_KEY, nextAgeGroupOrBirthday)
+            updateUserMeMutation.mutate({
+              nickname: nextNickname,
+              phoneNumber: nextPhoneNumber,
+              ageGroup: nextAgeGroupOrBirthday,
+            })
+            if (values.passwordChange) {
+              changeUserPasswordMutation.mutate(values.passwordChange, {
+                onSuccess: () => {
+                  setAccountPassword(values.passwordChange?.newPassword ?? '')
+                  writeLocalStorageItem(
+                    ACCOUNT_PASSWORD_KEY,
+                    values.passwordChange?.newPassword ?? '',
+                  )
+                },
+              })
+            }
           }}
           onBack={() => {
             setScreen('setting')
@@ -434,6 +464,11 @@ function App() {
             writeLocalStorageItem(ACCOUNT_LANGUAGE_KEY, values.language)
             writeLocalStorageItem(ACCOUNT_DAILY_GOAL_KEY, values.dailyGoal)
             writeLocalStorageItem(ACCOUNT_KOREAN_GOAL_KEY, values.koreanGoal)
+            updateUserMeMutation.mutate({
+              motherLanguage: values.language,
+              dailyGoalMin: parseDailyGoalMin(values.dailyGoal),
+              learningGoal: values.koreanGoal,
+            })
           }}
           onBack={() => {
             setScreen('setting')
