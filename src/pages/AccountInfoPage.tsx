@@ -12,7 +12,6 @@ interface AccountInfoPageProps {
     phoneNumber: string
     ageGroupOrBirthday: string
     passwordChange?: {
-      currentPassword: string
       newPassword: string
     }
   }) => void
@@ -29,7 +28,6 @@ function AccountInfoPage({
   onBack,
 }: AccountInfoPageProps) {
   const [draftNickname, setDraftNickname] = useState(nickname)
-  const [currentPassword, setCurrentPassword] = useState('')
   const [newPassword, setNewPassword] = useState('')
   const [draftPhoneNumber, setDraftPhoneNumber] = useState(phoneNumber)
   const [draftAgeGroupOrBirthday, setDraftAgeGroupOrBirthday] = useState(ageGroupOrBirthday)
@@ -40,7 +38,7 @@ function AccountInfoPage({
     phoneNumber: false,
     ageGroupOrBirthday: false,
   })
-  const isPasswordChangeReady = currentPassword.trim().length > 0 && newPassword.trim().length > 0
+  const isPasswordChangeReady = newPassword.trim().length > 0
   const hasPendingChanges =
     draftNickname !== nickname ||
     isPasswordChangeReady ||
@@ -71,7 +69,7 @@ function AccountInfoPage({
     },
     {
       label: 'Password',
-      value: 'Hidden for security',
+      value: '**********',
       editable: true,
       isEditing: editing.password,
       onEdit: () => toggleEditing('password'),
@@ -142,17 +140,10 @@ function AccountInfoPage({
                       <input
                         type="password"
                         className="account-info-input"
-                        value={currentPassword}
-                        onChange={(e) => setCurrentPassword(e.target.value)}
-                        placeholder="Current password"
-                        autoFocus
-                      />
-                      <input
-                        type="password"
-                        className="account-info-input"
                         value={newPassword}
                         onChange={(e) => setNewPassword(e.target.value)}
                         placeholder="New password"
+                        autoFocus
                       />
                     </div>
                   ) : (
@@ -194,7 +185,7 @@ function AccountInfoPage({
             className="account-info-save-button"
             onClick={() => {
               if (editing.password && !isPasswordChangeReady) {
-                setPasswordMessage('Enter current and new password.')
+                setPasswordMessage('Enter a new password.')
                 return
               }
 
@@ -204,12 +195,10 @@ function AccountInfoPage({
                 ageGroupOrBirthday: draftAgeGroupOrBirthday,
                 passwordChange: isPasswordChangeReady
                   ? {
-                      currentPassword: currentPassword.trim(),
                       newPassword: newPassword.trim(),
                     }
                   : undefined,
               })
-              setCurrentPassword('')
               setNewPassword('')
               setPasswordMessage('')
               setEditing({

@@ -87,7 +87,6 @@ export interface PatchUserPayload {
 }
 
 export interface ChangePasswordPayload {
-  currentPassword: string
   newPassword: string
 }
 
