@@ -1,5 +1,9 @@
 import { useEffect, useRef, useState } from 'react'
 import './SubscriptionBottomSheet.css'
+import graduationCapIcon from '../assets/graduation-cap_icon.svg'
+import groupOutlineIcon from '../assets/group-outline_icon.svg'
+import bookLineIcon from '../assets/mingcute_book-6-line_icon.svg'
+import sparksIcon from '../assets/sparks_icon.svg'
 
 interface SubscriptionBottomSheetProps {
   onClose: () => void
@@ -8,42 +12,19 @@ interface SubscriptionBottomSheetProps {
 const subscriptionBenefits = [
   {
     label: 'Access to all courses classes',
-    icon: (
-      <svg viewBox="0 0 24 24" aria-hidden="true">
-        <path d="M12 4 3 8l9 4 9-4-9-4Z" />
-        <path d="M7 10.5v4.2c0 1.3 2.2 2.8 5 2.8s5-1.5 5-2.8v-4.2" />
-      </svg>
-    ),
+    icon: graduationCapIcon,
   },
   {
     label: 'Full access to connectivity',
-    icon: (
-      <svg viewBox="0 0 24 24" aria-hidden="true">
-        <path d="M8 11a3 3 0 1 0 0-6 3 3 0 0 0 0 6Z" />
-        <path d="M16 11a3 3 0 1 0 0-6 3 3 0 0 0 0 6Z" />
-        <path d="M3 19c.4-3.1 2.2-5 5-5s4.6 1.9 5 5" />
-        <path d="M12 14.4c1-.4 2.1-.4 3.4-.1 2 .6 3.2 2.2 3.6 4.7" />
-      </svg>
-    ),
+    icon: groupOutlineIcon,
   },
   {
     label: 'Full access to personal notebook',
-    icon: (
-      <svg viewBox="0 0 24 24" aria-hidden="true">
-        <path d="M4 5.5c2.3-1 4.6-.9 7 .4v14c-2.4-1.3-4.7-1.4-7-.4v-14Z" />
-        <path d="M20 5.5c-2.3-1-4.6-.9-7 .4v14c2.4-1.3 4.7-1.4 7-.4v-14Z" />
-      </svg>
-    ),
+    icon: bookLineIcon,
   },
   {
     label: 'more coming soon',
-    icon: (
-      <svg viewBox="0 0 24 24" aria-hidden="true">
-        <path d="m12 3 1.2 3.2L16.5 7l-3.3 1L12 11l-1.2-3L7.5 7l3.3-.8L12 3Z" />
-        <path d="m6 12 .9 2.1L9 15l-2.1.9L6 18l-.9-2.1L3 15l2.1-.9L6 12Z" />
-        <path d="m16.5 13 1.1 2.8 2.9.7-2.9.8-1.1 2.7-1.1-2.7-2.9-.8 2.9-.7 1.1-2.8Z" />
-      </svg>
-    ),
+    icon: sparksIcon,
   },
 ]
 
@@ -106,15 +87,15 @@ function SubscriptionBottomSheet({ onClose }: SubscriptionBottomSheetProps) {
           </svg>
         </button>
 
-        <h2 id="subscription-sheet-title" className="subscription-sheet-title">
-          What subscription gives you
-        </h2>
-
         <div className="subscription-sheet-body">
+          <h2 id="subscription-sheet-title" className="subscription-sheet-title">
+            What subscription gives you
+          </h2>
+
           <ul className="subscription-benefit-list" aria-label="Subscription benefits">
             {subscriptionBenefits.map((benefit) => (
               <li key={benefit.label} className="subscription-benefit-item">
-                <span className="subscription-benefit-icon">{benefit.icon}</span>
+                <img className="subscription-benefit-icon" src={benefit.icon} alt="" aria-hidden="true" />
                 <span>{benefit.label}</span>
               </li>
             ))}
@@ -178,8 +159,10 @@ function SubscriptionBottomSheet({ onClose }: SubscriptionBottomSheetProps) {
                       <span className="subscription-radio" aria-hidden="true" />
                       <span className="subscription-pro-option-label">{option.label}</span>
                       <span className="subscription-pro-option-price">
-                        {option.price}
-                        {option.note ? <small> ({option.note})</small> : null}
+                        <span>{option.price}</span>
+                        {option.note ? (
+                          <span className="subscription-pro-option-note">({option.note})</span>
+                        ) : null}
                       </span>
                     </label>
                   ))}
