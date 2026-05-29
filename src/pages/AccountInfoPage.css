@@ -155,6 +155,38 @@
   width: 100%;
 }
 
+.account-info-password-requirements {
+  margin: 2px 0 0;
+  padding: 0;
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.account-info-password-requirement {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 11px;
+  font-weight: 500;
+  line-height: 1.25;
+}
+
+.account-info-password-requirement-icon {
+  width: 12px;
+  flex: 0 0 auto;
+  text-align: center;
+}
+
+.account-info-password-requirement-satisfied {
+  color: #3f9a58;
+}
+
+.account-info-password-requirement-unsatisfied {
+  color: #c2410c;
+}
+
 .account-info-message {
   margin: 8px 0 0;
   color: #c2410c;

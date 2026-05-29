@@ -1,15 +1,13 @@
 import './ProfileAchievementsPage.css'
-import {
-  formatAchievementDate,
-  profileMainMockData,
-  type ProfileAchievement,
-} from '../data/profile'
+import { formatAchievementDate } from '../data/profile'
+import { useUserAchievements } from '../hooks/useUserAchievements'
+import type { UserAchievement } from '../types/user.types'
 
 interface ProfileAchievementsPageProps {
   onBack: () => void
 }
 
-function AchievementItem({ achievement }: { achievement: ProfileAchievement }) {
+function AchievementItem({ achievement }: { achievement: UserAchievement }) {
   return (
     <article className="profile-achievements-item">
       <div className="profile-achievements-medal" aria-hidden="true">
@@ -24,7 +22,8 @@ function AchievementItem({ achievement }: { achievement: ProfileAchievement }) {
 }
 
 function ProfileAchievementsPage({ onBack }: ProfileAchievementsPageProps) {
-  const achievements = profileMainMockData.recentAchievements
+  const { data: achievementsData, isError, isLoading, refetch } = useUserAchievements()
+  const achievements = achievementsData?.badges ?? []
 
   return (
     <main className="profile-achievements-screen">
@@ -56,13 +55,30 @@ function ProfileAchievementsPage({ onBack }: ProfileAchievementsPageProps) {
           <h1 className="profile-achievements-title">Achievements</h1>
         </header>
 
-        {achievements.length > 0 ? (
+        {isLoading ? (
+          <p className="profile-achievements-status">Loading achievements...</p>
+        ) : isError ? (
+          <div className="profile-achievements-status" role="status">
+            <p>Unable to load achievements.</p>
+            <button
+              type="button"
+              className="profile-achievements-retry"
+              onClick={() => {
+                void refetch()
+              }}
+            >
+              Retry
+            </button>
+          </div>
+        ) : achievements.length > 0 ? (
           <section className="profile-achievements-grid" aria-label="Achievements">
             {achievements.map((achievement) => (
               <AchievementItem key={achievement.badgeId} achievement={achievement} />
             ))}
           </section>
-        ) : null}
+        ) : (
+          <p className="profile-achievements-status">No achievements yet</p>
+        )}
       </section>
     </main>
   )

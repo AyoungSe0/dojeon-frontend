@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 import './App.css'
 import SplashPage from './pages/SplashPage'
 import LoginPage from './pages/LoginPage'
@@ -22,6 +22,7 @@ import ProfileMainPage from './pages/ProfileMainPage'
 import ProfileAchievementsPage from './pages/ProfileAchievementsPage'
 import { useUpdateUserMe } from './hooks/useUpdateUserMe'
 import { useChangeUserPassword } from './hooks/useChangeUserPassword'
+import { fetchUserMe } from './services/user.service'
 import {
   courseItems,
   currentCourseId,
@@ -178,6 +179,7 @@ function App() {
   const [koreanLevel, setKoreanLevel] = useState(getStoredKoreanLevel)
   const [dailyGoal, setDailyGoal] = useState(getStoredDailyGoal)
   const [koreanGoal, setKoreanGoal] = useState(getStoredKoreanGoal)
+  const [hasPassword, setHasPassword] = useState(true)
   const [isSigningOut, setIsSigningOut] = useState(false)
   const [selectedCourseId, setSelectedCourseId] = useState(currentCourseId)
   const [selectedLessonId, setSelectedLessonId] = useState(currentLessonId)
@@ -203,7 +205,7 @@ function App() {
   const currentEmail = authSession?.email ?? pendingSignup?.email ?? ''
   const currentUsername = currentEmail ? currentEmail.split('@')[0] : userName
 
-  const resetLocalProfileState = () => {
+  const resetLocalProfileState = useCallback(() => {
     setUserName('Jinri')
     setAgeRange('')
     setPhoneNumber('')
@@ -211,19 +213,59 @@ function App() {
     setKoreanLevel('')
     setDailyGoal('')
     setKoreanGoal('')
-  }
+    setHasPassword(true)
+  }, [])
 
-  const hasCompletedOnboarding =
-    readLocalStorageItem(ONBOARDING_COMPLETED_KEY) === 'true'
+  const syncProfileStateFromUserMe = useCallback((userMe: Awaited<ReturnType<typeof fetchUserMe>>) => {
+    if (!userMe?.profile) {
+      return
+    }
 
-  const handleEnterAfterAuth = () => {
-    if (hasCompletedOnboarding) {
+    const nextNickname = userMe.profile.nickname?.trim() || 'Jinri'
+    const nextPhoneNumber = userMe.profile.phoneNumber ?? ''
+    const nextAgeGroup = userMe.profile.ageGroup ?? ''
+    const nextLanguage = userMe.profile.motherLanguage ?? ''
+    const nextKoreanLevel = userMe.profile.proficiencyLevel ?? ''
+    const nextDailyGoal =
+      userMe.profile.dailyGoalMin === null ? '' : `${userMe.profile.dailyGoalMin} min`
+    const nextKoreanGoal = userMe.profile.learningGoal ?? ''
+
+    setUserName(nextNickname)
+    setPhoneNumber(nextPhoneNumber)
+    setAgeRange(nextAgeGroup)
+    setLanguage(nextLanguage)
+    setKoreanLevel(nextKoreanLevel)
+    setDailyGoal(nextDailyGoal)
+    setKoreanGoal(nextKoreanGoal)
+    setHasPassword(userMe.profile.hasPassword)
+
+    saveOnboardingUsername(nextNickname)
+    writeLocalStorageItem(ACCOUNT_PHONE_NUMBER_KEY, nextPhoneNumber)
+    writeLocalStorageItem(ACCOUNT_AGE_RANGE_KEY, nextAgeGroup)
+    writeLocalStorageItem(ACCOUNT_LANGUAGE_KEY, nextLanguage)
+    writeLocalStorageItem(ACCOUNT_KOREAN_LEVEL_KEY, nextKoreanLevel)
+    writeLocalStorageItem(ACCOUNT_DAILY_GOAL_KEY, nextDailyGoal)
+    writeLocalStorageItem(ACCOUNT_KOREAN_GOAL_KEY, nextKoreanGoal)
+  }, [])
+
+  const handleEnterAfterAuth = useCallback(async () => {
+    const userMe = await fetchUserMe()
+
+    if (!userMe?.profile) {
+      throw new Error('내 정보를 불러오지 못했습니다.')
+    }
+
+    syncProfileStateFromUserMe(userMe)
+
+    if (userMe.profile.isOnboarded) {
+      markOnboardingComplete()
       setScreen('home')
       return
     }
 
+    removeLocalStorageItem(ONBOARDING_COMPLETED_KEY)
     setScreen('onboarding')
-  }
+  }, [syncProfileStateFromUserMe])
 
   const persistAuthSession = (email: string, tokenData: AuthTokenData) => {
     const didSwitchAccount = syncLocalAccountOwner(email)
@@ -244,7 +286,11 @@ function App() {
 
     const timer = window.setTimeout(() => {
       if (authSession) {
-        setScreen(hasCompletedOnboarding ? 'home' : 'onboarding')
+        void handleEnterAfterAuth().catch(() => {
+          clearStoredAuthSession()
+          setAuthSession(null)
+          setScreen('login')
+        })
         return
       }
 
@@ -254,7 +300,7 @@ function App() {
     return () => {
       window.clearTimeout(timer)
     }
-  }, [authSession, hasCompletedOnboarding, screen])
+  }, [authSession, handleEnterAfterAuth, screen])
 
   useEffect(() => {
     if (!authSession?.email) {
@@ -266,7 +312,7 @@ function App() {
     if (didSwitchAccount) {
       resetLocalProfileState()
     }
-  }, [authSession?.email])
+  }, [authSession?.email, resetLocalProfileState])
 
   const handleLogout = async () => {
     setIsSigningOut(true)
@@ -387,13 +433,17 @@ function App() {
       ) : screen === 'verify-success' ? (
         <VerifySuccessPage
           onStartLearning={() => {
-            handleEnterAfterAuth()
+            void handleEnterAfterAuth().catch(() => {
+              clearStoredAuthSession()
+              setAuthSession(null)
+              setScreen('login')
+            })
           }}
         />
       ) : screen === 'onboarding' ? (
         <OnboardingPage
           onBack={() => setScreen('login')}
-          onComplete={(values) => {
+          onComplete={async (values) => {
             const savedName = values.name?.trim() || 'Jinri'
             const savedAgeRange = values.ageRange ?? ''
             const savedLanguage = values.motherLanguage ?? ''
@@ -412,15 +462,20 @@ function App() {
             writeLocalStorageItem(ACCOUNT_KOREAN_LEVEL_KEY, savedKoreanLevel)
             writeLocalStorageItem(ACCOUNT_DAILY_GOAL_KEY, savedDailyGoal)
             writeLocalStorageItem(ACCOUNT_KOREAN_GOAL_KEY, savedKoreanGoal)
+            try {
+              await updateUserMeMutation.mutateAsync({
+                nickname: savedName,
+                ageGroup: savedAgeRange,
+                motherLanguage: savedLanguage,
+                proficiencyLevel: savedKoreanLevel,
+                dailyGoalMin: parseDailyGoalMin(savedDailyGoal),
+                learningGoal: savedKoreanGoal,
+                isOnboarded: true,
+              })
+            } catch {
+              return
+            }
             markOnboardingComplete()
-            updateUserMeMutation.mutate({
-              nickname: savedName,
-              ageGroup: savedAgeRange,
-              motherLanguage: savedLanguage,
-              proficiencyLevel: savedKoreanLevel,
-              dailyGoalMin: parseDailyGoalMin(savedDailyGoal),
-              learningGoal: savedKoreanGoal,
-            })
             setScreen('home')
           }}
         />
@@ -522,6 +577,7 @@ function App() {
           email={authSession?.email ?? ''}
           username={currentUsername}
           nickname={userName}
+          hasPassword={hasPassword}
           phoneNumber={phoneNumber}
           ageGroupOrBirthday={ageRange}
           onSave={(values) => {
@@ -677,7 +733,13 @@ function App() {
             const tokenData = await login(credentials)
             persistAuthSession(credentials.email, tokenData)
             setPendingSignup(null)
-            handleEnterAfterAuth()
+            try {
+              await handleEnterAfterAuth()
+            } catch (error) {
+              clearStoredAuthSession()
+              setAuthSession(null)
+              throw error
+            }
           }}
         />
       )}

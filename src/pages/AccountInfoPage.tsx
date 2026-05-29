@@ -5,6 +5,7 @@ interface AccountInfoPageProps {
   email: string
   username: string
   nickname: string
+  hasPassword: boolean
   phoneNumber: string
   ageGroupOrBirthday: string
   onSave: (values: {
@@ -22,6 +23,7 @@ function AccountInfoPage({
   email,
   username,
   nickname,
+  hasPassword,
   phoneNumber,
   ageGroupOrBirthday,
   onSave,
@@ -39,6 +41,34 @@ function AccountInfoPage({
     ageGroupOrBirthday: false,
   })
   const isPasswordChangeReady = newPassword.trim().length > 0
+  const passwordRules = [
+    {
+      id: 'length',
+      message: '8 charaters required.',
+      isSatisfied: newPassword.length >= 8,
+    },
+    {
+      id: 'special',
+      message: '1 special character required.',
+      isSatisfied: /[^A-Za-z0-9]/.test(newPassword),
+    },
+    {
+      id: 'uppercase',
+      message: '1 uppercase required',
+      isSatisfied: /[A-Z]/.test(newPassword),
+    },
+    {
+      id: 'lowercase',
+      message: '1 lowercase required.',
+      isSatisfied: /[a-z]/.test(newPassword),
+    },
+    {
+      id: 'number',
+      message: '1 number required.',
+      isSatisfied: /[0-9]/.test(newPassword),
+    },
+  ]
+  const isPasswordRulesValid = passwordRules.every((rule) => rule.isSatisfied)
   const hasPendingChanges =
     draftNickname !== nickname ||
     isPasswordChangeReady ||
@@ -69,8 +99,8 @@ function AccountInfoPage({
     },
     {
       label: 'Password',
-      value: '**********',
-      editable: true,
+      value: hasPassword ? '**********' : 'Not available',
+      editable: hasPassword,
       isEditing: editing.password,
       onEdit: () => toggleEditing('password'),
       usesPasswordFields: true,
@@ -141,10 +171,30 @@ function AccountInfoPage({
                         type="password"
                         className="account-info-input"
                         value={newPassword}
-                        onChange={(e) => setNewPassword(e.target.value)}
+                        onChange={(e) => {
+                          setNewPassword(e.target.value)
+                          setPasswordMessage('')
+                        }}
                         placeholder="New password"
                         autoFocus
                       />
+                      <ul className="account-info-password-requirements" aria-label="비밀번호 조건">
+                        {passwordRules.map((rule) => (
+                          <li
+                            key={rule.id}
+                            className={`account-info-password-requirement ${
+                              rule.isSatisfied
+                                ? 'account-info-password-requirement-satisfied'
+                                : 'account-info-password-requirement-unsatisfied'
+                            }`}
+                          >
+                            <span className="account-info-password-requirement-icon">
+                              {rule.isSatisfied ? '✓' : '✕'}
+                            </span>
+                            <span>{rule.message}</span>
+                          </li>
+                        ))}
+                      </ul>
                     </div>
                   ) : (
                     <input
@@ -186,6 +236,11 @@ function AccountInfoPage({
             onClick={() => {
               if (editing.password && !isPasswordChangeReady) {
                 setPasswordMessage('Enter a new password.')
+                return
+              }
+
+              if (isPasswordChangeReady && !isPasswordRulesValid) {
+                setPasswordMessage('Password does not meet all requirements.')
                 return
               }
 

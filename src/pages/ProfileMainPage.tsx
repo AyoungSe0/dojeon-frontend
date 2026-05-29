@@ -8,7 +8,6 @@ import settingIcon from '../assets/setting_icon.svg'
 import { useUserMe } from '../hooks/useUserMe'
 import {
   formatAchievementDate,
-  profileMainMockData,
   type ProfileMainData,
 } from '../data/profile'
 
@@ -85,8 +84,6 @@ const getJoinedYear = (createdAt: string) => {
 }
 
 function ProfileMainPage({
-  nickname,
-  username,
   onOpenHome,
   onOpenClass,
   onOpenPractice,
@@ -94,50 +91,106 @@ function ProfileMainPage({
   onOpenSetting,
   onOpenAchievements,
 }: ProfileMainPageProps) {
-  const { data: userMe } = useUserMe()
-  const profileData: ProfileMainData = userMe
-    ? {
-        user: {
-          userId: Number(userMe.profile.userId),
-          email: userMe.profile.email,
-          username: userMe.profile.username,
-          nickname: userMe.profile.nickname,
-          phoneNumber: userMe.profile.phoneNumber,
-          birthday: userMe.profile.birthday,
-          profileImgUrl: userMe.profile.profileImgUrl,
-          joinedYear: getJoinedYear(userMe.profile.createdAt),
-          subscriptionTier: userMe.profile.subscriptionTier,
-        },
-        settings: {
-          motherLanguage: userMe.profile.motherLanguage,
-          proficiencyLevel: userMe.profile.proficiencyLevel,
-          dailyGoalMin: userMe.profile.dailyGoalMin,
-          learningGoal: userMe.profile.learningGoal,
-          isPushNotificationOn: userMe.profile.isPushNotificationOn,
-          isMarketingAgreed: userMe.profile.isMarketingAgreed,
-        },
-        recentCourse: userMe.recentCourse
-          ? {
-              courseId: userMe.recentCourse.courseId,
-              lessonId: userMe.recentCourse.lessonId,
-              sectionId: userMe.recentCourse.sectionId,
-              courseTitle: userMe.recentCourse.courseTitle,
-              lessonTitle: userMe.recentCourse.lessonTitle,
-              sectionSubtitle: userMe.recentCourse.sectionTitle,
+  const { data: userMe, isError, isLoading, refetch } = useUserMe()
+  const bottomNav = (
+    <nav className="profile-main-bottom-nav">
+      {tabs.map((tab) => (
+        <button
+          key={tab.label}
+          type="button"
+          className={`profile-main-tab ${
+            tab.label === 'PROFILE' ? 'profile-main-tab-active' : ''
+          }`}
+          onClick={() => {
+            if (tab.label === 'HOME') {
+              onOpenHome()
             }
-          : null,
-        stats: userMe.stats,
-        attendance: userMe.attendance,
-        recentAchievements: userMe.recentAchievements,
-      }
-    : {
-        ...profileMainMockData,
-        user: {
-          ...profileMainMockData.user,
-          nickname: nickname.trim() || profileMainMockData.user.nickname,
-          username: username.trim() || profileMainMockData.user.username,
-        },
-      }
+
+            if (tab.label === 'CLASS') {
+              onOpenClass()
+            }
+
+            if (tab.label === 'PRACTICE') {
+              onOpenPractice()
+            }
+
+            if (tab.label === 'NOTEBOOK') {
+              onOpenNotebook()
+            }
+          }}
+        >
+          <img className="profile-main-tab-icon" src={tab.icon} alt="" aria-hidden="true" />
+          <span className="profile-main-tab-label">{tab.label}</span>
+        </button>
+      ))}
+    </nav>
+  )
+
+  if (isLoading) {
+    return (
+      <main className="profile-main-screen">
+        <section className="profile-main-status-panel">
+          <p className="profile-main-status-text">Loading profile...</p>
+        </section>
+        {bottomNav}
+      </main>
+    )
+  }
+
+  if (isError || !userMe) {
+    return (
+      <main className="profile-main-screen">
+        <section className="profile-main-status-panel">
+          <p className="profile-main-status-text">Unable to load profile.</p>
+          <button
+            type="button"
+            className="profile-main-status-button"
+            onClick={() => {
+              void refetch()
+            }}
+          >
+            Retry
+          </button>
+        </section>
+        {bottomNav}
+      </main>
+    )
+  }
+
+  const profileData: ProfileMainData = {
+    user: {
+      userId: Number(userMe.profile.userId),
+      email: userMe.profile.email,
+      username: userMe.profile.username,
+      nickname: userMe.profile.nickname,
+      phoneNumber: userMe.profile.phoneNumber,
+      birthday: userMe.profile.birthday,
+      profileImgUrl: userMe.profile.profileImgUrl,
+      joinedYear: getJoinedYear(userMe.profile.createdAt),
+      subscriptionTier: userMe.profile.subscriptionTier,
+    },
+    settings: {
+      motherLanguage: userMe.profile.motherLanguage,
+      proficiencyLevel: userMe.profile.proficiencyLevel,
+      dailyGoalMin: userMe.profile.dailyGoalMin,
+      learningGoal: userMe.profile.learningGoal,
+      isPushNotificationOn: userMe.profile.isPushNotificationOn,
+      isMarketingAgreed: userMe.profile.isMarketingAgreed,
+    },
+    recentCourse: userMe.recentCourse
+      ? {
+          courseId: userMe.recentCourse.courseId,
+          lessonId: userMe.recentCourse.lessonId,
+          sectionId: userMe.recentCourse.sectionId,
+          courseTitle: userMe.recentCourse.courseTitle,
+          lessonTitle: userMe.recentCourse.lessonTitle,
+          sectionSubtitle: userMe.recentCourse.sectionTitle,
+        }
+      : null,
+    stats: userMe.stats,
+    attendance: userMe.attendance,
+    recentAchievements: userMe.recentAchievements,
+  }
   const { user, recentCourse, stats, attendance, recentAchievements } = profileData
   const calendarDays = getCalendarDays(attendance.year, attendance.month)
   const calendarTitle = `${monthNames[attendance.month - 1]} ${attendance.year}`
@@ -295,37 +348,7 @@ function ProfileMainPage({
         </section>
       </section>
 
-      <nav className="profile-main-bottom-nav">
-        {tabs.map((tab) => (
-          <button
-            key={tab.label}
-            type="button"
-            className={`profile-main-tab ${
-              tab.label === 'PROFILE' ? 'profile-main-tab-active' : ''
-            }`}
-            onClick={() => {
-              if (tab.label === 'HOME') {
-                onOpenHome()
-              }
-
-              if (tab.label === 'CLASS') {
-                onOpenClass()
-              }
-
-              if (tab.label === 'PRACTICE') {
-                onOpenPractice()
-              }
-
-              if (tab.label === 'NOTEBOOK') {
-                onOpenNotebook()
-              }
-            }}
-          >
-            <img className="profile-main-tab-icon" src={tab.icon} alt="" aria-hidden="true" />
-            <span className="profile-main-tab-label">{tab.label}</span>
-          </button>
-        ))}
-      </nav>
+      {bottomNav}
     </main>
   )
 }

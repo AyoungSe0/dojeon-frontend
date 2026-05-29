@@ -45,7 +45,7 @@ export interface ProfileAchievement {
   badgeId: number
   title: string
   imageUrl: string | null
-  earnedAt: string
+  earnedAt: string | null
 }
 
 export interface ProfileMainData {
@@ -112,7 +112,11 @@ export const profileMainMockData: ProfileMainData = {
   ],
 }
 
-export const formatAchievementDate = (date: string) => {
+export const formatAchievementDate = (date: string | null) => {
+  if (!date) {
+    return 'Not earned yet'
+  }
+
   const parsedDate = new Date(date)
 
   if (Number.isNaN(parsedDate.getTime())) {

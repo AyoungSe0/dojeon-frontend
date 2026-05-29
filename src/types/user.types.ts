@@ -10,6 +10,7 @@ export interface ApiResponse<T> {
 export interface UserProfile {
   userId: string
   email: string
+  hasPassword: boolean
   nickname: string
   username: string
   phoneNumber: string | null
@@ -25,6 +26,7 @@ export interface UserProfile {
   subscriptionExpiresAt: string | null
   isPushNotificationOn: boolean
   isMarketingAgreed: boolean
+  isOnboarded: boolean
   createdAt: string
 }
 
@@ -56,8 +58,15 @@ export interface UserRecentCourse {
 export interface UserAchievement {
   badgeId: number
   title: string
+  description?: string
   imageUrl: string | null
-  earnedAt: string
+  isEarned?: boolean
+  earnedAt: string | null
+}
+
+export interface UserAchievementsData {
+  totalEarned: number
+  badges: UserAchievement[]
 }
 
 export interface UserMe {
@@ -84,6 +93,7 @@ export interface PatchUserPayload {
   isMarketingAgreed?: boolean
   deviceToken?: string
   profileImgUrl?: string
+  isOnboarded?: boolean
 }
 
 export interface ChangePasswordPayload {
