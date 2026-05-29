@@ -24,7 +24,7 @@ interface ClassPageProps {
   onOpenHome: () => void
   onOpenPractice: () => void
   onOpenProfile: () => void
-  onOpenCurrentLesson: (sectionId: number) => void
+  onOpenCurrentLesson: (sectionId: number, sectionType: string) => void
   onOpenLesson: (courseId: number, lessonId: number) => void
 }
 
@@ -241,7 +241,7 @@ function ClassPage({
           <button
             type="button"
             className="class-current-lesson-card"
-            onClick={() => onOpenCurrentLesson(resumeBanner.sectionId)}
+            onClick={() => onOpenCurrentLesson(resumeBanner.sectionId, resumeBanner.sectionType)}
             aria-label={`Open ${resumeBanner.courseTitle}, ${resumeBanner.lessonTitle}`}
           >
             <span className="class-current-lesson-copy">

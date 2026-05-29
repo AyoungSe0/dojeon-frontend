@@ -1,4 +1,4 @@
-import { Fragment, useRef, useState } from 'react'
+import { Fragment, useMemo, useRef, useState } from 'react'
 import homeIcon from '../assets/home.svg'
 import editIcon from '../assets/edit.svg'
 import fileIcon from '../assets/file.svg'
@@ -7,8 +7,12 @@ import profileIcon from '../assets/user.svg'
 import characterImage from '../assets/character.png'
 import noteAddIcon from '../assets/hugeicons_note-add.png'
 import './VocabularyLessonPage.css'
+import { useSectionCards } from '../hooks/useSectionCards.ts'
+import { useCreateScrap } from '../hooks/useCreateScrap.ts'
+import { useDeleteScrap } from '../hooks/useDeleteScrap.ts'
 
 interface VocabularyLessonPageProps {
+  sectionId: number | null
   onBack: () => void
   onOpenHome: () => void
   onOpenClass: () => void
@@ -28,35 +32,12 @@ const tabs = [
   { icon: profileIcon, label: 'PROFILE' },
 ]
 
-const vocabularyItems = [
-  {
-    id: 1,
-    word: '생신',
-    pronunciation: 'saeng-sin',
-    meaning: 'Birthday',
-    note: '생일 (높임말)',
-  },
-  {
-    id: 2,
-    word: '꽃',
-    pronunciation: 'kkot',
-    meaning: 'Flower',
-    note: '식물의 꽃',
-  },
-  {
-    id: 3,
-    word: '나무',
-    pronunciation: 'na-mu',
-    meaning: 'Tree',
-    note: '줄기와 가지가 있는 식물',
-  },
-]
-
 const swipeThreshold = 40
 const cardWidth = 236
 const cardGap = 13
 
 function VocabularyLessonPage({
+  sectionId,
   onBack,
   onOpenHome,
   onOpenClass,
@@ -65,12 +46,56 @@ function VocabularyLessonPage({
   onOpenProfile,
   onOpenNextGrammar,
 }: VocabularyLessonPageProps) {
+  const { data: cardsData, loading: cardsLoading } = useSectionCards(sectionId)
+  const createScrapMutation = useCreateScrap()
+  const deleteScrapMutation = useDeleteScrap()
+
   const [view, setView] = useState<VocabularyLessonView>('intro')
   const [currentCardIndex, setCurrentCardIndex] = useState(0)
   const [flippedWordIds, setFlippedWordIds] = useState<number[]>([])
-  const [personalListIds, setPersonalListIds] = useState<number[]>([])
+  const [optimisticAdded, setOptimisticAdded] = useState<number[]>([])
+  const [optimisticRemoved, setOptimisticRemoved] = useState<number[]>([])
+  const [optimisticScrapIds, setOptimisticScrapIds] = useState<Record<number, string>>({})
   const [personalListPromptWordId, setPersonalListPromptWordId] = useState<number | null>(null)
   const pointerStartXRef = useRef<number | null>(null)
+
+  // Base scrap state derived directly from API data (no useEffect)
+  const baseScrapedIds = useMemo(
+    () => (cardsData?.cards ?? []).filter((c) => c.isScraped).map((c) => c.id),
+    [cardsData],
+  )
+  const baseScrapIdMap = useMemo(() => {
+    const map: Record<number, string> = {}
+    for (const card of cardsData?.cards ?? []) {
+      if (card.isScraped && card.scrapId) map[card.id] = card.scrapId
+    }
+    return map
+  }, [cardsData])
+
+  // Merge API state with optimistic overrides
+  const personalListIds = useMemo(() => {
+    const merged = new Set([
+      ...baseScrapedIds.filter((id) => !optimisticRemoved.includes(id)),
+      ...optimisticAdded,
+    ])
+    return Array.from(merged)
+  }, [baseScrapedIds, optimisticAdded, optimisticRemoved])
+  const scrapIdByCardId = useMemo(
+    () => ({ ...baseScrapIdMap, ...optimisticScrapIds }),
+    [baseScrapIdMap, optimisticScrapIds],
+  )
+
+  const vocabularyItems = useMemo(
+    () =>
+      (cardsData?.cards ?? []).map((card) => ({
+        id: card.id,
+        word: card.wordFront,
+        meaning: card.wordBack,
+        note: card.notes ?? '',
+        audioUrl: card.audioUrl,
+      })),
+    [cardsData],
+  )
 
   const currentCard = vocabularyItems[currentCardIndex]
   const carouselEntries = [
@@ -80,10 +105,15 @@ function VocabularyLessonPage({
   ]
 
   const handleSpeakCurrentWord = () => {
-    if (typeof window === 'undefined' || !('speechSynthesis' in window)) {
+    if (!currentCard) return
+
+    if (currentCard.audioUrl) {
+      const audio = new Audio(currentCard.audioUrl)
+      void audio.play()
       return
     }
 
+    if (typeof window === 'undefined' || !('speechSynthesis' in window)) return
     const utterance = new SpeechSynthesisUtterance(currentCard.word)
     utterance.lang = 'ko-KR'
     utterance.rate = 0.9
@@ -96,7 +126,6 @@ function VocabularyLessonPage({
       setView('card')
       return
     }
-
     onBack()
   }
 
@@ -106,10 +135,35 @@ function VocabularyLessonPage({
     )
   }
 
-  const togglePersonalList = (wordId: number) => {
-    setPersonalListIds((current) =>
-      current.includes(wordId) ? current.filter((id) => id !== wordId) : [...current, wordId],
-    )
+  const handleTogglePersonalList = async (wordId: number) => {
+    const isSaved = personalListIds.includes(wordId)
+
+    if (isSaved) {
+      const scrapId = scrapIdByCardId[wordId]
+      if (!scrapId) return
+      setOptimisticRemoved((prev) => [...prev, wordId])
+      setOptimisticAdded((prev) => prev.filter((id) => id !== wordId))
+      try {
+        await deleteScrapMutation.mutateAsync(scrapId)
+      } catch {
+        setOptimisticRemoved((prev) => prev.filter((id) => id !== wordId))
+      }
+    } else {
+      if (sectionId === null) return
+      setOptimisticAdded((prev) => [...prev, wordId])
+      try {
+        const result = await createScrapMutation.mutateAsync({
+          type: 'VOCAB',
+          cardId: wordId,
+          sectionId,
+        })
+        if (result?.id) {
+          setOptimisticScrapIds((prev) => ({ ...prev, [wordId]: result.id }))
+        }
+      } catch {
+        setOptimisticAdded((prev) => prev.filter((id) => id !== wordId))
+      }
+    }
   }
 
   const moveCard = (direction: 'prev' | 'next') => {
@@ -117,7 +171,6 @@ function VocabularyLessonPage({
       if (direction === 'prev') {
         return Math.max(current - 1, 0)
       }
-
       return Math.min(current + 1, vocabularyItems.length - 1)
     })
   }
@@ -127,20 +180,11 @@ function VocabularyLessonPage({
   }
 
   const handlePointerUp = (clientX: number) => {
-    if (pointerStartXRef.current === null) {
-      return
-    }
-
+    if (pointerStartXRef.current === null) return
     const deltaX = clientX - pointerStartXRef.current
     pointerStartXRef.current = null
-
-    if (deltaX <= -swipeThreshold) {
-      moveCard('next')
-    }
-
-    if (deltaX >= swipeThreshold) {
-      moveCard('prev')
-    }
+    if (deltaX <= -swipeThreshold) moveCard('next')
+    if (deltaX >= swipeThreshold) moveCard('prev')
   }
 
   const title =
@@ -239,7 +283,9 @@ function VocabularyLessonPage({
               <p className="vocabulary-lesson-bubble-copy">
                 You&apos;re gonna learn
                 <br />
-                {vocabularyItems.length} new words today!
+                {cardsLoading
+                  ? '…'
+                  : `${vocabularyItems.length} new words today!`}
               </p>
             </div>
             <img
@@ -253,12 +299,16 @@ function VocabularyLessonPage({
           <section className="vocabulary-lesson-flashcards">
             <article className="vocabulary-lesson-flashcards-card">
               <p className="vocabulary-lesson-flashcards-label">Flashcards game</p>
-              <h2 className="vocabulary-lesson-flashcards-word">{currentCard.word}</h2>
-              <p className="vocabulary-lesson-flashcards-meaning">{currentCard.meaning}</p>
+              <h2 className="vocabulary-lesson-flashcards-word">{currentCard?.word ?? ''}</h2>
+              <p className="vocabulary-lesson-flashcards-meaning">{currentCard?.meaning ?? ''}</p>
             </article>
             <p className="vocabulary-lesson-flashcards-copy">
               Tap cards and quiz yourself with the words from this lesson.
             </p>
+          </section>
+        ) : cardsLoading ? (
+          <section className="vocabulary-lesson-study">
+            <p className="vocabulary-lesson-loading">Loading cards…</p>
           </section>
         ) : (
           <section className="vocabulary-lesson-study">
@@ -518,25 +568,11 @@ function VocabularyLessonPage({
                 tab.label === 'CLASS' ? 'vocabulary-lesson-tab-active' : ''
               }`}
               onClick={() => {
-                if (tab.label === 'HOME') {
-                  onOpenHome()
-                }
-
-                if (tab.label === 'CLASS') {
-                  onOpenClass()
-                }
-
-                if (tab.label === 'PRACTICE') {
-                  onOpenPractice()
-                }
-
-                if (tab.label === 'NOTEBOOK') {
-                  onOpenNotebook()
-                }
-
-                if (tab.label === 'PROFILE') {
-                  onOpenProfile()
-                }
+                if (tab.label === 'HOME') onOpenHome()
+                if (tab.label === 'CLASS') onOpenClass()
+                if (tab.label === 'PRACTICE') onOpenPractice()
+                if (tab.label === 'NOTEBOOK') onOpenNotebook()
+                if (tab.label === 'PROFILE') onOpenProfile()
               }}
             >
               <img className="vocabulary-lesson-tab-icon" src={tab.icon} alt="" aria-hidden="true" />
@@ -575,7 +611,7 @@ function VocabularyLessonPage({
                 type="button"
                 className="vocabulary-lesson-modal-button vocabulary-lesson-modal-button-primary"
                 onClick={() => {
-                  togglePersonalList(promptWord.id)
+                  void handleTogglePersonalList(promptWord.id)
                   setPersonalListPromptWordId(null)
                 }}
               >

@@ -51,10 +51,12 @@ export interface SectionCard {
     id: number;
     wordFront: string;
     wordBack: string;
-    audioUrl: string;
+    notes?: string;
+    locales?: Record<string, { back: string; notes?: string }>;
+    audioUrl: string | null;
     sequence: number;
     isScraped: boolean;
-    scrapId: number | null;
+    scrapId: string | null;
 }
 
 export interface SectionCardData {

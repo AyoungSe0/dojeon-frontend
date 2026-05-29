@@ -53,10 +53,27 @@ export interface GrammarScrapListData {
     nextCursor: string | null;
 }
 
+export interface VocabScrapCardData {
+    id: number;
+    wordFront: string;
+    wordBack: string;
+    notes?: string;
+    locales?: Record<string, { back: string; notes?: string }>;
+    audioUrl: string | null;
+    sequence: number;
+}
+
+export interface VocabScrapItem {
+    scrapId: string;
+    cardId: number;
+    createdAt: string;
+    card: VocabScrapCardData | null;
+}
+
 export interface VocabScrapGroup {
     courseId: number;
     courseTitle: string;
-    items: unknown[]; //현재 안 나와 있다
+    items: VocabScrapItem[];
 }
 
 export interface VocabScrapListData {
@@ -77,8 +94,8 @@ export interface ScrapListResponse {
 
 export interface CreateScrapRequest {
     type: string;
-    cardId: number;
-    materialId: number;
+    cardId?: number;
+    materialId?: number;
     sectionId: number;
 }
 
