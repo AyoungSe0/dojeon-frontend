@@ -1,9 +1,8 @@
-import { useEffect, useState } from 'react'
+import { useState } from 'react'
 import './LessonDetailPage.css'
 import {
   type CourseItem,
   findLessonById,
-  getLessonPathId,
   type LessonItem,
   type LessonPathId,
 } from '../data/classLessons'
@@ -83,16 +82,6 @@ function LessonDetailPage({
   const moduleProgressDisplayValues = moduleProgressValues.map((value) =>
     value >= 100 ? 100 : Math.max(value, minimumModuleFillPercent),
   )
-
-  useEffect(() => {
-    setIsLessonPickerOpen(false)
-    setSelectedPathId(initialPathId ?? getLessonPathId(selectedLesson.stage))
-    setSelectedModuleId(null)
-    setLessonProgressPercent(selectedLesson.progress)
-    const nextModuleProgressValues = getModuleProgressValues(selectedLesson)
-    setModuleProgressValues(nextModuleProgressValues)
-    setCompletedModuleIds(getCompletedModuleIds(nextModuleProgressValues))
-  }, [course.id, initialPathId, selectedLessonId, selectedLesson.stage])
 
   return (
     <main className="lesson-detail-screen">

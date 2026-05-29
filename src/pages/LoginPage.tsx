@@ -3,33 +3,34 @@ import './LoginPage.css'
 
 interface LoginPageProps {
   onSignUp: () => void
-  onLogin?: (credentials: { email: string; password: string }) => boolean
+  onLogin?: (credentials: { email: string; password: string }) => Promise<void>
 }
 
 function LoginPage({ onSignUp, onLogin }: LoginPageProps) {
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
-  const [showLoginError, setShowLoginError] = useState(false)
+  const [loginError, setLoginError] = useState('')
+  const [isSubmitting, setIsSubmitting] = useState(false)
 
   useEffect(() => {
-    if (!showLoginError) {
+    if (!loginError) {
       return
     }
 
     const timer = window.setTimeout(() => {
-      setShowLoginError(false)
+      setLoginError('')
     }, 3000)
 
     return () => {
       window.clearTimeout(timer)
     }
-  }, [showLoginError])
+  }, [loginError])
 
   return (
     <main className="login-screen">
-      {showLoginError ? (
+      {loginError ? (
         <div className="login-error-box" role="alert" aria-live="assertive">
-          Your ID or password is incorrect. Please enter the correct ID or password.
+          {loginError}
         </div>
       ) : null}
 
@@ -37,14 +38,30 @@ function LoginPage({ onSignUp, onLogin }: LoginPageProps) {
 
       <form
         className="login-form"
-        onSubmit={(e) => {
+        onSubmit={async (e) => {
           e.preventDefault()
-          const didLogin = onLogin?.({
-            email: email.trim(),
-            password,
-          })
 
-          setShowLoginError(didLogin === false)
+          if (!onLogin || isSubmitting) {
+            return
+          }
+
+          setIsSubmitting(true)
+          setLoginError('')
+
+          try {
+            await onLogin({
+              email: email.trim(),
+              password,
+            })
+          } catch (error) {
+            setLoginError(
+              error instanceof Error
+                ? error.message
+                : '이메일 또는 비밀번호가 올바르지 않습니다.',
+            )
+          } finally {
+            setIsSubmitting(false)
+          }
         }}
       >
         <label className="field-wrap">
@@ -55,8 +72,9 @@ function LoginPage({ onSignUp, onLogin }: LoginPageProps) {
             value={email}
             onChange={(e) => {
               setEmail(e.target.value)
-              setShowLoginError(false)
+              setLoginError('')
             }}
+            disabled={isSubmitting}
           />
         </label>
 
@@ -68,18 +86,19 @@ function LoginPage({ onSignUp, onLogin }: LoginPageProps) {
             value={password}
             onChange={(e) => {
               setPassword(e.target.value)
-              setShowLoginError(false)
+              setLoginError('')
             }}
+            disabled={isSubmitting}
           />
         </label>
 
         <p className="forgot-password">Forget password?</p>
 
-        <button type="submit" className="btn btn-primary login-btn">
-          Login
+        <button type="submit" className="btn btn-primary login-btn" disabled={isSubmitting}>
+          {isSubmitting ? 'Signing in...' : 'Login'}
         </button>
 
-        <button type="button" className="btn btn-ghost google-btn">
+        <button type="button" className="btn btn-ghost google-btn" disabled={isSubmitting}>
           Log in with Google
         </button>
       </form>

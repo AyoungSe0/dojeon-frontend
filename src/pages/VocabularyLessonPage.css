@@ -574,30 +574,34 @@
 
 .vocabulary-lesson-tab {
   flex: 1;
+  min-width: 0;
+  height: 100%;
   border: 0;
+  padding: 0;
   background: transparent;
   display: flex;
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  gap: 6px;
+  gap: 9px;
   color: #000000;
   cursor: pointer;
 }
 
 .vocabulary-lesson-tab-icon {
-  width: 28px;
-  height: 28px;
+  width: 24px;
+  height: 24px;
   object-fit: contain;
 }
 
 .vocabulary-lesson-tab-label {
   color: #000000;
-  font-size: 10px;
-  font-weight: 500;
-  line-height: 1.2;
+  font-family: 'Pretendard', 'Noto Sans', system-ui, sans-serif;
+  font-size: 8px;
+  font-weight: 400;
+  line-height: normal;
 }
 
 .vocabulary-lesson-tab-active .vocabulary-lesson-tab-label {
-  font-weight: 600;
+  font-weight: 700;
 }

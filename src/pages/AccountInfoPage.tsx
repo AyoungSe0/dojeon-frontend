@@ -5,12 +5,10 @@ interface AccountInfoPageProps {
   email: string
   username: string
   nickname: string
-  password: string
   phoneNumber: string
   ageGroupOrBirthday: string
   onSave: (values: {
     nickname: string
-    password: string
     phoneNumber: string
     ageGroupOrBirthday: string
   }) => void
@@ -21,34 +19,29 @@ function AccountInfoPage({
   email,
   username,
   nickname,
-  password,
   phoneNumber,
   ageGroupOrBirthday,
   onSave,
   onBack,
 }: AccountInfoPageProps) {
   const [draftNickname, setDraftNickname] = useState(nickname)
-  const [draftPassword, setDraftPassword] = useState(password)
   const [draftPhoneNumber, setDraftPhoneNumber] = useState(phoneNumber)
   const [draftAgeGroupOrBirthday, setDraftAgeGroupOrBirthday] = useState(ageGroupOrBirthday)
   const [editing, setEditing] = useState({
     nickname: false,
-    password: false,
     phoneNumber: false,
     ageGroupOrBirthday: false,
   })
   const hasPendingChanges =
     draftNickname !== nickname ||
-    draftPassword !== password ||
     draftPhoneNumber !== phoneNumber ||
     draftAgeGroupOrBirthday !== ageGroupOrBirthday
   const toggleEditing = (
-    key: 'nickname' | 'password' | 'phoneNumber' | 'ageGroupOrBirthday',
+    key: 'nickname' | 'phoneNumber' | 'ageGroupOrBirthday',
   ) => {
     setEditing((prev) => ({ ...prev, [key]: !prev[key] }))
   }
 
-  const maskedPassword = draftPassword ? '*'.repeat(Math.max(draftPassword.length, 8)) : '-'
   const items = [
     { label: 'Email', value: email || '-' },
     { label: 'Username', value: username || '-' },
@@ -59,17 +52,12 @@ function AccountInfoPage({
       isEditing: editing.nickname,
       onEdit: () => toggleEditing('nickname'),
       onChange: (value: string) => setDraftNickname(value),
+      inputType: 'text',
       inputValue: draftNickname,
     },
     {
       label: 'Password',
-      value: maskedPassword,
-      editable: true,
-      isEditing: editing.password,
-      onEdit: () => toggleEditing('password'),
-      onChange: (value: string) => setDraftPassword(value),
-      inputType: 'password',
-      inputValue: draftPassword,
+      value: 'Hidden for security',
     },
     {
       label: 'Phone number',
@@ -78,6 +66,7 @@ function AccountInfoPage({
       isEditing: editing.phoneNumber,
       onEdit: () => toggleEditing('phoneNumber'),
       onChange: (value: string) => setDraftPhoneNumber(value),
+      inputType: 'text',
       inputValue: draftPhoneNumber,
     },
     {
@@ -87,6 +76,7 @@ function AccountInfoPage({
       isEditing: editing.ageGroupOrBirthday,
       onEdit: () => toggleEditing('ageGroupOrBirthday'),
       onChange: (value: string) => setDraftAgeGroupOrBirthday(value),
+      inputType: 'text',
       inputValue: draftAgeGroupOrBirthday,
     },
   ]
@@ -132,7 +122,7 @@ function AccountInfoPage({
                   <input
                     type={item.inputType ?? 'text'}
                     className="account-info-input"
-                    value={item.inputValue ?? item.value}
+                    value={item.inputValue}
                     onChange={(e) => item.onChange(e.target.value)}
                     autoFocus
                   />
@@ -160,13 +150,11 @@ function AccountInfoPage({
             onClick={() => {
               onSave({
                 nickname: draftNickname,
-                password: draftPassword,
                 phoneNumber: draftPhoneNumber,
                 ageGroupOrBirthday: draftAgeGroupOrBirthday,
               })
               setEditing({
                 nickname: false,
-                password: false,
                 phoneNumber: false,
                 ageGroupOrBirthday: false,
               })

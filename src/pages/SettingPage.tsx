@@ -10,9 +10,17 @@ interface SettingPageProps {
   onBack: () => void
   onOpenAccountInfo: () => void
   onOpenPreferences: () => void
+  onSignOut: () => void
+  isSigningOut?: boolean
 }
 
-function SettingPage({ onBack, onOpenAccountInfo, onOpenPreferences }: SettingPageProps) {
+function SettingPage({
+  onBack,
+  onOpenAccountInfo,
+  onOpenPreferences,
+  onSignOut,
+  isSigningOut = false,
+}: SettingPageProps) {
   return (
     <main className="setting-screen">
       <section className="setting-content">
@@ -114,8 +122,13 @@ function SettingPage({ onBack, onOpenAccountInfo, onOpenPreferences }: SettingPa
           </div>
         </section>
 
-        <button type="button" className="setting-signout-button">
-          Sign out
+        <button
+          type="button"
+          className="setting-signout-button"
+          onClick={onSignOut}
+          disabled={isSigningOut}
+        >
+          {isSigningOut ? 'Signing out...' : 'Sign out'}
         </button>
 
         <div className="setting-policy-links">

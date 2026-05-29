@@ -1,5 +1,6 @@
 import './SignupPage.css'
-import { FormEvent, useState } from 'react'
+import { useState } from 'react'
+import type { FormEvent } from 'react'
 import checkIconGray from '../assets/check_icon_gray.svg'
 import checkIconGreen from '../assets/check_icon_green.svg'
 import checkIconWhite from '../assets/check_icon_white.svg'
@@ -8,9 +9,18 @@ import eyeOffIcon from '../assets/eye-off.png'
 import xIcon from '../assets/x_Icon.png'
 import { requestEmailVerificationCode } from '../services/auth'
 
+export interface SignupSubmission {
+  email: string
+  password: string
+  isTermsAgreed: boolean
+  isPrivacyAgreed: boolean
+  isAgeVerified: boolean
+  isMarketingAgreed: boolean
+}
+
 interface SignupPageProps {
   onBack: () => void
-  onSignupSuccess: (email: string, password: string) => void
+  onSignupSuccess: (payload: SignupSubmission) => void
 }
 
 function SignupPage({ onBack, onSignupSuccess }: SignupPageProps) {
@@ -25,7 +35,6 @@ function SignupPage({ onBack, onSignupSuccess }: SignupPageProps) {
   const [isConfirmPasswordFocused, setIsConfirmPasswordFocused] = useState(false)
   const [isConfirmPasswordTouched, setIsConfirmPasswordTouched] = useState(false)
   const [acceptedTerms, setAcceptedTerms] = useState<boolean[]>([
-    false,
     false,
     false,
     false,
@@ -89,7 +98,7 @@ function SignupPage({ onBack, onSignupSuccess }: SignupPageProps) {
 
   const termItems = [
     {
-      text: 'I agree to the Terms of Service and Privacy Policy',
+      text: 'I agree to the Terms of Service.',
       required: true,
     },
     {
@@ -97,15 +106,11 @@ function SignupPage({ onBack, onSignupSuccess }: SignupPageProps) {
       required: true,
     },
     {
-      text: 'I confirm that I am at least 14 years old,',
+      text: 'I confirm that I am at least 14 years old.',
       required: true,
     },
     {
       text: 'I agree to receive marketing updates and exclusive offers.',
-      required: false,
-    },
-    {
-      text: 'I agree to receive learning reminders.',
       required: false,
     },
   ]
@@ -174,7 +179,14 @@ function SignupPage({ onBack, onSignupSuccess }: SignupPageProps) {
     setIsSubmitting(true)
     try {
       await requestEmailVerificationCode(email)
-      onSignupSuccess(email, password)
+      onSignupSuccess({
+        email: email.trim(),
+        password,
+        isTermsAgreed: acceptedTerms[0],
+        isPrivacyAgreed: acceptedTerms[1],
+        isAgeVerified: acceptedTerms[2],
+        isMarketingAgreed: acceptedTerms[3],
+      })
       setErrors({ email: '', password: '', confirmPassword: '', terms: '' })
     } catch (error) {
       const message =
@@ -255,6 +267,7 @@ function SignupPage({ onBack, onSignupSuccess }: SignupPageProps) {
                     setIsPasswordFocused(false)
                     setIsPasswordTouched(true)
                   }}
+                  disabled={isSubmitting}
                 />
                 <button
                   type="button"
@@ -262,6 +275,7 @@ function SignupPage({ onBack, onSignupSuccess }: SignupPageProps) {
                   onMouseDown={(e) => e.preventDefault()}
                   onClick={() => setIsPasswordVisible((prev) => !prev)}
                   aria-label={isPasswordVisible ? '비밀번호 숨기기' : '비밀번호 보기'}
+                  disabled={isSubmitting}
                 >
                   <img
                     src={isPasswordVisible ? eyeOffIcon : eyeIcon}
@@ -308,6 +322,7 @@ function SignupPage({ onBack, onSignupSuccess }: SignupPageProps) {
                     setIsConfirmPasswordFocused(false)
                     setIsConfirmPasswordTouched(true)
                   }}
+                  disabled={isSubmitting}
                 />
                 <button
                   type="button"
@@ -317,6 +332,7 @@ function SignupPage({ onBack, onSignupSuccess }: SignupPageProps) {
                   aria-label={
                     isConfirmPasswordVisible ? '비밀번호 숨기기' : '비밀번호 보기'
                   }
+                  disabled={isSubmitting}
                 >
                   <img
                     src={isConfirmPasswordVisible ? eyeOffIcon : eyeIcon}
@@ -350,6 +366,7 @@ function SignupPage({ onBack, onSignupSuccess }: SignupPageProps) {
                 onClick={handleToggleAllTerms}
                 aria-label="모든 약관 동의"
                 aria-pressed={isAllAccepted}
+                disabled={isSubmitting}
               >
                 <span
                   className={`terms-check-icon terms-check-icon-all ${isAllAccepted ? 'terms-check-icon-all-checked' : 'terms-check-icon-all-empty'}`}
@@ -376,6 +393,7 @@ function SignupPage({ onBack, onSignupSuccess }: SignupPageProps) {
                     onClick={() => handleToggleTerm(index)}
                     aria-label={item.text}
                     aria-pressed={acceptedTerms[index]}
+                    disabled={isSubmitting}
                   >
                     <span
                       className={`terms-check-icon terms-check-icon-term ${acceptedTerms[index] ? 'terms-check-icon-term-checked' : 'terms-check-icon-term-empty'}`}

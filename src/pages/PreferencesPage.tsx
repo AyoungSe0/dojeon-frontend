@@ -115,7 +115,7 @@ function PreferencesPage({
                   <input
                     type="text"
                     className="preferences-input"
-                    value={item.inputValue ?? item.value}
+                    value={item.inputValue}
                     onChange={(e) => item.onChange(e.target.value)}
                     autoFocus
                   />
