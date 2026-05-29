@@ -1,4 +1,5 @@
 import './ProfileMainPage.css'
+import { useState } from 'react'
 import homeIcon from '../assets/home.svg'
 import editIcon from '../assets/edit.svg'
 import fileIcon from '../assets/file.svg'
@@ -6,6 +7,7 @@ import bookOpenIcon from '../assets/book-open.svg'
 import profileIcon from '../assets/user.svg'
 import settingIcon from '../assets/setting_icon.svg'
 import { useUserMe } from '../hooks/useUserMe'
+import SubscriptionBottomSheet from '../components/SubscriptionBottomSheet'
 import {
   formatAchievementDate,
   type ProfileMainData,
@@ -91,6 +93,7 @@ function ProfileMainPage({
   onOpenSetting,
   onOpenAchievements,
 }: ProfileMainPageProps) {
+  const [isSubscriptionSheetOpen, setIsSubscriptionSheetOpen] = useState(false)
   const { data: userMe, isError, isLoading, refetch } = useUserMe()
   const bottomNav = (
     <nav className="profile-main-bottom-nav">
@@ -341,7 +344,11 @@ function ProfileMainPage({
           <h2 className="profile-main-section-title">Subscriptions</h2>
           <article className="profile-main-subscription-card">
             <p className="profile-main-subscription-placeholder">{subscriptionCopy}</p>
-            <button type="button" className="profile-main-subscribe-button">
+            <button
+              type="button"
+              className="profile-main-subscribe-button"
+              onClick={() => setIsSubscriptionSheetOpen(true)}
+            >
               {user.subscriptionTier === 'FREE' ? 'Subscribe now' : 'Manage subscription'}
             </button>
           </article>
@@ -349,6 +356,9 @@ function ProfileMainPage({
       </section>
 
       {bottomNav}
+      {isSubscriptionSheetOpen && (
+        <SubscriptionBottomSheet onClose={() => setIsSubscriptionSheetOpen(false)} />
+      )}
     </main>
   )
 }

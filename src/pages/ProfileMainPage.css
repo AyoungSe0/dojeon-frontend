@@ -1,5 +1,6 @@
 .profile-main-screen {
   min-height: 100svh;
+  height: 100svh;
   width: min(390px, 100%);
   margin: 0 auto;
   background: #ffffff;
@@ -8,6 +9,8 @@
   align-items: center;
   padding-bottom: 94px;
   position: relative;
+  box-sizing: border-box;
+  overflow: hidden;
   text-align: left;
   font-family: 'Noto Sans', 'Noto Sans KR', system-ui, sans-serif;
 }
@@ -17,6 +20,7 @@
   flex: 1;
   box-sizing: border-box;
   text-align: left;
+  overflow-y: auto;
 }
 
 .profile-main-status-panel {
