@@ -1,5 +1,6 @@
 import { useState } from 'react'
 import './VocabularyPage.css'
+import { useVocabScraps } from '../hooks/useVocabScraps.ts'
 
 interface VocabularyPageProps {
   onBack: () => void
@@ -7,6 +8,7 @@ interface VocabularyPageProps {
 
 function VocabularyPage({ onBack }: VocabularyPageProps) {
   const [isRecentSort, setIsRecentSort] = useState(true)
+  const { groups, loading, error } = useVocabScraps()
 
   return (
     <main className="vocabulary-screen">
@@ -64,21 +66,27 @@ function VocabularyPage({ onBack }: VocabularyPageProps) {
           </button>
         </div>
 
-        <section className="vocabulary-card-list">
-          {['COURSE 2', 'COURSE 1'].map((course) => (
-            <article key={course} className="vocabulary-card">
-              <p className="vocabulary-card-title">{course}</p>
-              <div className="vocabulary-card-items">
-                <p>1. 나무</p>
-                <p>2. 생신</p>
-                <p>3. 꽃</p>
-              </div>
-              <button type="button" className="vocabulary-practice-button">
-                to flashcard practice
-              </button>
-            </article>
-          ))}
-        </section>
+        {loading ? (
+          <p className="vocabulary-loading">Loading…</p>
+        ) : error ? (
+          <p className="vocabulary-error">{error.message}</p>
+        ) : (
+          <section className="vocabulary-card-list">
+            {groups.map((group) => (
+              <article key={group.courseId} className="vocabulary-card">
+                <p className="vocabulary-card-title">{group.courseTitle}</p>
+                <div className="vocabulary-card-items">
+                  {group.items.map((item, index) => (
+                    <p key={item.scrapId}>{index + 1}. {item.card?.wordFront ?? ''}</p>
+                  ))}
+                </div>
+                <button type="button" className="vocabulary-practice-button">
+                  to flashcard practice
+                </button>
+              </article>
+            ))}
+          </section>
+        )}
       </section>
     </main>
   )

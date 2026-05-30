@@ -1,20 +1,11 @@
-import { useState } from 'react'
+import { useMemo, useState } from 'react'
 import './ClassPage.css'
 import homeIcon from '../assets/home.svg'
 import editIcon from '../assets/edit.svg'
 import fileIcon from '../assets/file.svg'
 import bookOpenIcon from '../assets/book-open.svg'
 import profileIcon from '../assets/user.svg'
-import {
-  courseItems,
-  currentCourseId,
-  currentLessonId,
-  findCourseById,
-  findLessonById,
-  getLessonPathId,
-  type LessonStage,
-  type LessonPathId,
-} from '../data/classLessons'
+import { useCoursesDashboard } from '../hooks/useCoursesDashboard.ts'
 
 const tabs = [
   { icon: homeIcon, label: 'HOME' },
@@ -24,11 +15,8 @@ const tabs = [
   { icon: profileIcon, label: 'PROFILE' },
 ]
 
-const progressPercent = 18
-const progressFillPercent = Math.min(100, progressPercent + 4)
 const progressDotCount = 5
 const progressDotInset = 10
-const learningStreakDays = 5
 const trialTargetDays = 7
 const trialLabel = `${trialTargetDays}-day Trial available`
 
@@ -36,13 +24,9 @@ interface ClassPageProps {
   onOpenHome: () => void
   onOpenPractice: () => void
   onOpenProfile: () => void
-  onOpenCurrentLesson: (stage: LessonStage) => void
-  onOpenLesson: (courseId: string, lessonId: string, initialPathId?: LessonPathId) => void
+  onOpenCurrentLesson: (sectionId: number, sectionType: string) => void
+  onOpenLesson: (courseId: number, lessonId: number) => void
 }
-
-const currentCourse = findCourseById(currentCourseId) ?? courseItems[0]
-const currentLesson =
-  findLessonById(currentCourse, currentLessonId) ?? currentCourse.lessons[currentCourse.lessons.length - 1]
 
 function ClassPage({
   onOpenHome,
@@ -51,8 +35,62 @@ function ClassPage({
   onOpenCurrentLesson,
   onOpenLesson,
 }: ClassPageProps) {
-  const [openCourseIds, setOpenCourseIds] = useState<string[]>([])
+  const { data, loading, error, refetch } = useCoursesDashboard()
   const [isBottomLessonVisible, setIsBottomLessonVisible] = useState(true)
+  const [manuallyToggled, setManuallyToggled] = useState<Map<number, boolean>>(new Map())
+
+  const resumeBanner = data?.resumeBanner ?? null
+  const courses = useMemo(() => data?.courses ?? [], [data])
+
+  const progressPercent = useMemo(() => {
+    if (!resumeBanner) return 0
+    const activeCourse = courses.find((c) => c.courseId === resumeBanner.courseId)
+    return activeCourse?.overallProgressPercent ?? resumeBanner.overallProgressPercent ?? 0
+  }, [courses, resumeBanner])
+
+  const progressFillPercent = Math.min(100, progressPercent + 4)
+
+  const openCourseIds = useMemo(() => {
+    const open = new Set<number>()
+    if (resumeBanner) open.add(resumeBanner.courseId)
+    for (const [courseId, isOpen] of manuallyToggled) {
+      if (isOpen) open.add(courseId)
+      else open.delete(courseId)
+    }
+    return open
+  }, [resumeBanner, manuallyToggled])
+
+  const toggleCourse = (courseId: number) => {
+    const currentlyOpen = openCourseIds.has(courseId)
+    setManuallyToggled((prev) => {
+      const next = new Map(prev)
+      next.set(courseId, !currentlyOpen)
+      return next
+    })
+  }
+
+  if (loading) {
+    return (
+      <main className="class-screen">
+        <section className="class-content">
+          <p className="class-status">Loading…</p>
+        </section>
+      </main>
+    )
+  }
+
+  if (error) {
+    return (
+      <main className="class-screen">
+        <section className="class-content">
+          <p className="class-status">{error.message}</p>
+          <button type="button" onClick={() => void refetch()}>
+            Retry
+          </button>
+        </section>
+      </main>
+    )
+  }
 
   return (
     <main className="class-screen">
@@ -85,27 +123,24 @@ function ClassPage({
         </section>
 
         <section className="class-course-list" aria-label="courses">
-          {courseItems.map((course) => {
-            const isOpen = openCourseIds.includes(course.id)
+          {courses.map((course) => {
+            const isOpen = openCourseIds.has(course.courseId)
+            const courseLabel = course.title
 
             return (
-              <article key={course.id} className="class-course-item">
+              <article key={course.courseId} className="class-course-item">
                 <button
                   type="button"
                   className="class-course-toggle"
                   aria-expanded={isOpen}
-                  aria-controls={`${course.id}-lessons`}
-                  onClick={() =>
-                    setOpenCourseIds((current) =>
-                      current.includes(course.id)
-                        ? current.filter((courseId) => courseId !== course.id)
-                        : [...current, course.id],
-                    )
-                  }
+                  aria-controls={`course-${course.courseId}-lessons`}
+                  onClick={() => toggleCourse(course.courseId)}
                 >
-                  <span className="class-course-toggle-label">{course.label}</span>
+                  <span className="class-course-toggle-label">{courseLabel}</span>
                   <svg
-                    className={`class-course-arrow ${isOpen ? 'class-course-arrow-open' : 'class-course-arrow-closed'}`}
+                    className={`class-course-arrow ${
+                      isOpen ? 'class-course-arrow-open' : 'class-course-arrow-closed'
+                    }`}
                     width="18"
                     height="18"
                     viewBox="0 0 18 18"
@@ -123,33 +158,40 @@ function ClassPage({
                 </button>
 
                 {isOpen ? (
-                  <div id={`${course.id}-lessons`} className="class-course-lessons">
+                  <div
+                    id={`course-${course.courseId}-lessons`}
+                    className="class-course-lessons"
+                  >
                     {course.lessons.map((lesson) => (
                       <button
-                        key={`${course.id}-${lesson.id}`}
+                        key={`${course.courseId}-${lesson.lessonId}`}
                         type="button"
                         className="class-lesson-card"
-                        onClick={() => onOpenLesson(course.id, lesson.id, getLessonPathId(lesson.stage))}
-                        aria-label={`Open ${course.label}, ${lesson.label}`}
+                        onClick={() => onOpenLesson(course.courseId, lesson.lessonId)}
+                        aria-label={`Open ${courseLabel}, ${lesson.title}`}
                       >
                         <span className="class-lesson-main">
                           <span
                             className="class-lesson-progress"
-                            aria-label={`${lesson.progress}% progress`}
+                            aria-label={`${lesson.progressPercent}% progress`}
                             style={{
                               background: `conic-gradient(from 0deg, #5f5f5f 0deg ${
-                                lesson.progress * 3.6
-                              }deg, #bdbdbd ${lesson.progress * 3.6}deg 360deg)`,
+                                lesson.progressPercent * 3.6
+                              }deg, #bdbdbd ${lesson.progressPercent * 3.6}deg 360deg)`,
                             }}
                           >
                             <span className="class-lesson-progress-text">
-                              <span className="class-lesson-progress-number">{lesson.progress}</span>
+                              <span className="class-lesson-progress-number">
+                                {lesson.progressPercent}
+                              </span>
                               <span className="class-lesson-progress-unit">%</span>
                             </span>
                           </span>
 
                           <span className="class-lesson-copy">
-                            <span className="class-lesson-chip">{lesson.label}</span>
+                            <span className="class-lesson-chip">
+                              Lesson {lesson.orderNum}
+                            </span>
                             <span className="class-lesson-title">{lesson.title}</span>
                           </span>
                         </span>
@@ -180,27 +222,33 @@ function ClassPage({
         </section>
       </section>
 
-      <button
-        type="button"
-        className={`class-trial-toggle ${isBottomLessonVisible ? 'class-trial-toggle-expanded' : 'class-trial-toggle-collapsed'}`}
-        onClick={() => setIsBottomLessonVisible((current) => !current)}
-        aria-expanded={isBottomLessonVisible}
-        aria-label={`${trialLabel}. ${learningStreakDays} day streak`}
-      >
-        <span className="class-trial-toggle-text">{trialLabel}</span>
-      </button>
+      {resumeBanner && (
+        <button
+          type="button"
+          className={`class-trial-toggle ${
+            isBottomLessonVisible ? 'class-trial-toggle-expanded' : 'class-trial-toggle-collapsed'
+          }`}
+          onClick={() => setIsBottomLessonVisible((current) => !current)}
+          aria-expanded={isBottomLessonVisible}
+          aria-label={trialLabel}
+        >
+          <span className="class-trial-toggle-text">{trialLabel}</span>
+        </button>
+      )}
 
-      {isBottomLessonVisible ? (
+      {resumeBanner && isBottomLessonVisible ? (
         <>
           <button
             type="button"
             className="class-current-lesson-card"
-            onClick={() => onOpenCurrentLesson(currentLesson.stage)}
-            aria-label={`Open ${currentCourse.label}, ${currentLesson.label}`}
+            onClick={() => onOpenCurrentLesson(resumeBanner.sectionId, resumeBanner.sectionType)}
+            aria-label={`Open ${resumeBanner.courseTitle}, ${resumeBanner.lessonTitle}`}
           >
             <span className="class-current-lesson-copy">
-              <span className="class-current-lesson-kicker">{`${currentCourse.label}, ${currentLesson.label}`}</span>
-              <span className="class-current-lesson-title">{currentLesson.title}</span>
+              <span className="class-current-lesson-kicker">
+                {`${resumeBanner.courseTitle}, ${resumeBanner.lessonTitle}`}
+              </span>
+              <span className="class-current-lesson-title">{resumeBanner.sectionTitle}</span>
             </span>
             <svg
               className="class-current-lesson-arrow"
@@ -223,7 +271,7 @@ function ClassPage({
           <div className="class-current-lesson-progress-bar" aria-hidden="true">
             <span
               className="class-current-lesson-progress-fill"
-              style={{ width: `${currentLesson.progress}%` }}
+              style={{ width: `${resumeBanner.overallProgressPercent}%` }}
             />
           </div>
         </>
@@ -236,17 +284,9 @@ function ClassPage({
             type="button"
             className={`class-tab ${tab.label === 'CLASS' ? 'class-tab-active' : ''}`}
             onClick={() => {
-              if (tab.label === 'HOME') {
-                onOpenHome()
-              }
-
-              if (tab.label === 'PRACTICE') {
-                onOpenPractice()
-              }
-
-              if (tab.label === 'PROFILE') {
-                onOpenProfile()
-              }
+              if (tab.label === 'HOME') onOpenHome()
+              if (tab.label === 'PRACTICE') onOpenPractice()
+              if (tab.label === 'PROFILE') onOpenProfile()
             }}
           >
             <img className="class-tab-icon" src={tab.icon} alt="" aria-hidden="true" />

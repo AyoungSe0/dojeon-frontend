@@ -5,6 +5,7 @@ import fileIcon from '../assets/file.svg'
 import bookOpenIcon from '../assets/book-open.svg'
 import profileIcon from '../assets/user.svg'
 import rightArrowIcon from '../assets/icon-park-outline_right-c.png'
+import { useScrapDashboard } from '../hooks/useScrapDashboard.ts'
 
 const tabs = [
   { icon: homeIcon, label: 'HOME' },
@@ -15,7 +16,7 @@ const tabs = [
 ]
 
 interface NotebookPageProps {
-  userName: string
+  userName?: string
   onOpenGrammarNotebook: () => void
   onOpenVocabulary: () => void
   onOpenHome: () => void
@@ -33,10 +34,16 @@ function NotebookPage({
   onOpenPractice,
   onOpenProfile,
 }: NotebookPageProps) {
+  const { data, loading } = useScrapDashboard()
+
+  const displayName = data?.userName ?? userName ?? ''
+  const vocabGroups = data?.vocabularyPreview.groups ?? []
+  const grammarItems = data?.grammarPreview ?? []
+
   return (
     <main className="notebook-screen">
       <section className="notebook-content">
-        <h1 className="notebook-title">{`${userName}'s personal notebook`}</h1>
+        <h1 className="notebook-title">{`${displayName}'s personal notebook`}</h1>
 
         <section className="notebook-section">
           <div className="notebook-section-header">
@@ -50,40 +57,38 @@ function NotebookPage({
             </button>
           </div>
 
-          <div className="notebook-card-row">
-            <article className="notebook-card">
-              <p className="notebook-card-title">COURSE 1</p>
-              <div className="notebook-card-list notebook-card-list-numbered">
-                <p>1. 나무</p>
-                <p>2. 생신</p>
-                <p>3. 꽃</p>
-              </div>
-              <button type="button" className="notebook-card-link">
-                see more
-              </button>
-            </article>
-
-            <article className="notebook-card">
-              <p className="notebook-card-title">COURSE 2</p>
-              <div className="notebook-card-list notebook-card-list-bulleted">
-                <p>
-                  <span className="notebook-bullet" aria-hidden="true" />
-                  <span>나무</span>
-                </p>
-                <p>
-                  <span className="notebook-bullet" aria-hidden="true" />
-                  <span>생신</span>
-                </p>
-                <p>
-                  <span className="notebook-bullet" aria-hidden="true" />
-                  <span>꽃</span>
-                </p>
-              </div>
-              <button type="button" className="notebook-card-link">
-                see more
-              </button>
-            </article>
-          </div>
+          {loading && vocabGroups.length === 0 ? (
+            <p className="notebook-loading">Loading…</p>
+          ) : (
+            <div className="notebook-card-row">
+              {vocabGroups.map((group, index) => (
+                <article key={group.courseId} className="notebook-card">
+                  <p className="notebook-card-title">{group.courseTitle}</p>
+                  <div
+                    className={`notebook-card-list ${
+                      index % 2 === 0
+                        ? 'notebook-card-list-numbered'
+                        : 'notebook-card-list-bulleted'
+                    }`}
+                  >
+                    {index % 2 === 0
+                      ? group.words.map((word, i) => (
+                          <p key={i}>{i + 1}. {word}</p>
+                        ))
+                      : group.words.map((word, i) => (
+                          <p key={i}>
+                            <span className="notebook-bullet" aria-hidden="true" />
+                            <span>{word}</span>
+                          </p>
+                        ))}
+                  </div>
+                  <button type="button" className="notebook-card-link">
+                    see more
+                  </button>
+                </article>
+              ))}
+            </div>
+          )}
         </section>
 
         <section className="notebook-section notebook-section-grammar">
@@ -98,25 +103,29 @@ function NotebookPage({
             </button>
           </div>
 
-          <div className="notebook-grammar-list">
-            {['lesson 5', 'lesson 4', 'lesson 3'].map((lesson) => (
-              <article key={lesson} className="notebook-grammar-card">
-                <div className="notebook-grammar-top">
-                  <p className="notebook-grammar-course">COURSE 1</p>
-                  <span className="notebook-grammar-badge">{lesson}</span>
-                </div>
-                <div className="notebook-grammar-bottom">
-                  <p className="notebook-grammar-topic">을까요?</p>
-                </div>
-                <img
-                  src={rightArrowIcon}
-                  alt=""
-                  aria-hidden="true"
-                  className="notebook-grammar-arrow"
-                />
-              </article>
-            ))}
-          </div>
+          {loading && grammarItems.length === 0 ? (
+            <p className="notebook-loading">Loading…</p>
+          ) : (
+            <div className="notebook-grammar-list">
+              {grammarItems.map((item) => (
+                <article key={item.scrapId} className="notebook-grammar-card">
+                  <div className="notebook-grammar-top">
+                    <p className="notebook-grammar-course">{item.courseTitle}</p>
+                    <span className="notebook-grammar-badge">{item.lessonTitle}</span>
+                  </div>
+                  <div className="notebook-grammar-bottom">
+                    <p className="notebook-grammar-topic">{item.grammarPoint}</p>
+                  </div>
+                  <img
+                    src={rightArrowIcon}
+                    alt=""
+                    aria-hidden="true"
+                    className="notebook-grammar-arrow"
+                  />
+                </article>
+              ))}
+            </div>
+          )}
         </section>
       </section>
 
