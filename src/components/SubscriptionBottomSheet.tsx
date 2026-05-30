@@ -32,6 +32,7 @@ const formatPlanDuration = (billingCycleMonths: number) => {
 }
 
 const isFreeTier = (tier: string) => tier.trim().toUpperCase() === 'FREE'
+const isFreePlan = (plan: SubscriptionPlan) => plan.planId.trim().toLowerCase() === 'free'
 
 const getFocusableElements = (container: HTMLElement) =>
   Array.from(
@@ -45,15 +46,16 @@ const getInitialSelectedPlanId = (
   currentSubscriptionPlanId: string | null,
   currentSubscriptionTier: string,
 ) => {
+  const freePlan = plans.find(isFreePlan)
   const currentPlan = currentSubscriptionPlanId
     ? plans.find((plan) => plan.planId === currentSubscriptionPlanId)
     : undefined
-  const trialPlan = plans.find((plan) => plan.hasTrial)
-  const firstPlan = plans[0]
+  const trialPlan = plans.find((plan) => !isFreePlan(plan) && plan.hasTrial)
+  const firstPaidPlan = plans.find((plan) => !isFreePlan(plan))
 
   if (currentPlan) return currentPlan.planId
-  if (isFreeTier(currentSubscriptionTier)) return trialPlan?.planId ?? ''
-  return firstPlan?.planId ?? trialPlan?.planId ?? ''
+  if (isFreeTier(currentSubscriptionTier)) return freePlan?.planId ?? ''
+  return firstPaidPlan?.planId ?? trialPlan?.planId ?? freePlan?.planId ?? ''
 }
 
 function SubscriptionBottomSheet({
@@ -69,11 +71,9 @@ function SubscriptionBottomSheet({
   const closeButtonRef = useRef<HTMLButtonElement | null>(null)
   const previouslyFocusedElementRef = useRef<HTMLElement | null>(null)
   const plans = subscriptionPlansData?.plans ?? []
-  const trialPlan = plans.find((plan) => plan.hasTrial)
-  const paidPlans = plans
-  const displayBenefits = subscriptionPlansData?.benefits?.length
-    ? subscriptionPlansData.benefits
-    : fallbackBenefits
+  const freePlan = plans.find(isFreePlan)
+  const paidPlans = plans.filter((plan) => !isFreePlan(plan))
+  const trialPlan = paidPlans.find((plan) => plan.hasTrial)
   const defaultPaidPlanId =
     paidPlans.find((plan) => plan.planId === currentSubscriptionPlanId)?.planId ??
     paidPlans[0]?.planId ??
@@ -83,14 +83,20 @@ function SubscriptionBottomSheet({
     : getInitialSelectedPlanId(plans, currentSubscriptionPlanId, currentSubscriptionTier)
   const selectedBackendPlan = plans.find((plan) => plan.planId === selectedPlanId)
   const defaultMode: SubscriptionSelectionMode =
-    selectedBackendPlan && !isFreeTier(currentSubscriptionTier)
+    selectedBackendPlan && isFreePlan(selectedBackendPlan)
+      ? 'free'
+      : selectedBackendPlan && !isFreeTier(currentSubscriptionTier)
       ? 'pro'
-      : trialPlan
-        ? 'trial'
-        : 'free'
+      : freePlan
+        ? 'free'
+        : trialPlan
+          ? 'trial'
+          : 'pro'
   const selectedMode: SubscriptionSelectionMode =
     selectedModeOverride ?? defaultMode
   const isProOptionsVisible = selectedMode === 'pro'
+  const benefitsPlan = selectedBackendPlan ?? trialPlan ?? freePlan
+  const displayBenefits = benefitsPlan ? benefitsPlan.benefits : fallbackBenefits
   const subscriptionActionText =
     selectedMode === 'trial'
       ? 'Start 7-day trial'
@@ -201,26 +207,28 @@ function SubscriptionBottomSheet({
 
               <fieldset className="subscription-plan-list">
                 <legend className="subscription-plan-legend">Subscription plans</legend>
-                <label
-                  className={`subscription-plan-row ${
-                    selectedMode === 'free' ? 'subscription-plan-row-selected' : ''
-                  }`}
-                >
-                  <input
-                    type="radio"
-                    name="subscription-plan"
-                    value="free"
-                    checked={selectedMode === 'free'}
-                    onChange={() => {
-                      setSelectedPlanIdOverride('')
-                      setSelectedModeOverride('free')
-                    }}
-                  />
-                  <span>Free Plan</span>
-                  {selectedMode === 'free' && (
-                    <img className="subscription-check-icon" src={checkIconGray} alt="" aria-hidden="true" />
-                  )}
-                </label>
+                {freePlan ? (
+                  <label
+                    className={`subscription-plan-row ${
+                      selectedMode === 'free' ? 'subscription-plan-row-selected' : ''
+                    }`}
+                  >
+                    <input
+                      type="radio"
+                      name="subscription-plan"
+                      value={freePlan.planId}
+                      checked={selectedMode === 'free'}
+                      onChange={() => {
+                        setSelectedPlanIdOverride(freePlan.planId)
+                        setSelectedModeOverride('free')
+                      }}
+                    />
+                    <span>{freePlan.title}</span>
+                    {selectedMode === 'free' && (
+                      <img className="subscription-check-icon" src={checkIconGray} alt="" aria-hidden="true" />
+                    )}
+                  </label>
+                ) : null}
 
                 {trialPlan ? (
                   <label
@@ -294,7 +302,7 @@ function SubscriptionBottomSheet({
                               <span>{option.priceText}</span>
                               {option.subText ? (
                                 <span className="subscription-pro-option-note">
-                                  ({option.subText})
+                                  {option.subText}
                                 </span>
                               ) : null}
                             </span>

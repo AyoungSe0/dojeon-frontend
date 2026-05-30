@@ -7,10 +7,10 @@ export interface SubscriptionPlan {
   subText: string | null
   hasTrial: boolean
   billingCycleMonths: number
+  benefits: string[]
 }
 
 export interface SubscriptionPlansData {
-  benefits: string[]
   plans: SubscriptionPlan[]
 }
 

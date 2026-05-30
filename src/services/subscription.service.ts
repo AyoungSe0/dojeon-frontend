@@ -17,44 +17,71 @@ const mockSubscriptionDelayMs =
 const wait = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms))
 
 const mockSubscriptionPlans: SubscriptionPlansData = {
-  benefits: [
-    'Access to all courses classes',
-    'Full access to connectivity',
-    'Full access to personal notebook',
-    'more coming soon',
-  ],
   plans: [
     {
-      planId: 'sub_monthly_15',
+      planId: 'free',
+      title: 'Free Plan',
+      priceText: '$0',
+      subText: null,
+      hasTrial: false,
+      billingCycleMonths: 1,
+      benefits: ['Access to selected course classes', 'Limited connectivity'],
+    },
+    {
+      planId: 'pro',
       title: '1 Month',
       priceText: '$15',
       subText: null,
       hasTrial: true,
       billingCycleMonths: 1,
+      benefits: [
+        'Access to all courses classes',
+        'Full access to connectivity',
+        'Full access to personal notebook',
+        'more coming soon',
+      ],
     },
     {
-      planId: 'sub_quarterly_39',
+      planId: 'basic',
       title: '3 Months',
       priceText: '$39',
       subText: '($13/mo)',
       hasTrial: false,
       billingCycleMonths: 3,
+      benefits: [
+        'Access to all courses classes',
+        'Full access to connectivity',
+        'Full access to personal notebook',
+        'more coming soon',
+      ],
     },
     {
-      planId: 'sub_halfyear_69',
+      planId: 'halfyear',
       title: '6 Months',
       priceText: '$69',
       subText: '($11.5/mo)',
       hasTrial: false,
       billingCycleMonths: 6,
+      benefits: [
+        'Access to all courses classes',
+        'Full access to connectivity',
+        'Full access to personal notebook',
+        'more coming soon',
+      ],
     },
     {
-      planId: 'sub_yearly_99',
+      planId: 'annual',
       title: '1 Year',
       priceText: '$99',
       subText: '($8.25/mo)',
       hasTrial: false,
       billingCycleMonths: 12,
+      benefits: [
+        'Access to all courses classes',
+        'Full access to connectivity',
+        'Full access to personal notebook',
+        'more coming soon',
+      ],
     },
   ],
 }
