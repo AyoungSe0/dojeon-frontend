@@ -14,6 +14,7 @@ import { useSectionMaterials } from '../hooks/useSectionMaterials.ts'
 import { useCheckSectionAnswer } from '../hooks/useCheckSectionAnswer.ts'
 import { useSaveSectionProgress } from '../hooks/useSaveSectionProgress.ts'
 import { useCreateScrap } from '../hooks/useCreateScrap.ts'
+import { useSectionPageTimer } from '../hooks/useSectionPageTimer.ts'
 
 export type PracticeStep =
   | 'choice'
@@ -80,6 +81,17 @@ type ChoiceFeedback = {
   phase: 'flash' | 'settled'
 }
 
+const grammarPageByStep: Partial<Record<PracticeStep, number>> = {
+  choice: 0,
+  'fill-intro': 1,
+  fill: 2,
+  'make-intro': 3,
+  make: 4,
+  review: 5,
+  'next-grammar': 6,
+  'next-grammar-rules': 7,
+}
+
 function GrammarPracticePage({
   onBack,
   language,
@@ -137,6 +149,19 @@ function GrammarPracticePage({
   const [reviewDifficulty, setReviewDifficulty] = useState<ReviewDifficulty>('NORMAL')
   const [reviewMarkComplete, setReviewMarkComplete] = useState<boolean | null>(null)
   const [reviewSaveScrap, setReviewSaveScrap] = useState<boolean | null>(null)
+
+  const trackedPageNumber =
+    practiceStep === 'reading'
+      ? readingQuestionIndex
+      : practiceStep === 'listening'
+        ? 0
+        : grammarPageByStep[practiceStep] ?? -1
+
+  useSectionPageTimer({
+    sectionId,
+    pageNumber: trackedPageNumber,
+    enabled: trackedPageNumber >= 0,
+  })
 
   const readingDragStartXRef = useRef<number | null>(null)
   const readingDragOffsetRef = useRef(0)
@@ -497,18 +522,22 @@ function GrammarPracticePage({
   }, [choiceFeedback])
 
   const handleReviewSubmit = async (nextStep: 'next-grammar' | 'reading') => {
+    if (reviewMarkComplete === null) return
+
     if (sectionId !== null) {
-      await saveProgress
-        .mutateAsync({
+      try {
+        await saveProgress.mutateAsync({
           sectionId,
           payload: {
             currentPage: 1,
             stayTimeSeconds: 0,
             forceComplete: reviewMarkComplete === true,
-            difficulty: reviewDifficulty ?? 'NORMAL',
+            difficulty: reviewMarkComplete === true ? reviewDifficulty : undefined,
           },
         })
-        .catch(() => {})
+      } catch {
+        return
+      }
 
       if (reviewSaveScrap === true && grammarMaterialId !== null) {
         await createScrap
@@ -783,7 +812,11 @@ function GrammarPracticePage({
               <button
                 type="button"
                 className="grammar-practice-review-action-button grammar-practice-review-action-button-primary"
-                disabled={saveProgress.isPending || createScrap.isPending}
+                disabled={
+                  reviewMarkComplete === null ||
+                  saveProgress.isPending ||
+                  createScrap.isPending
+                }
                 onClick={() => void handleReviewSubmit('next-grammar')}
               >
                 {saveProgress.isPending || createScrap.isPending ? 'SAVING...' : 'CONTINUE'}

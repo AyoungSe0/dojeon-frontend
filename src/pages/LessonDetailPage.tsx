@@ -1,16 +1,24 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import './LessonDetailPage.css'
 import { useLessonSections } from '../hooks/useLessonSections.ts'
 import { useSaveSectionProgress } from '../hooks/useSaveSectionProgress.ts'
-import type { LessonSectionsData } from '../types/lessons.types.ts'
+import { useUpdateLessonPreferences } from '../hooks/useUpdateLessonPreferences.ts'
+import type {
+  LessonSectionsData,
+  LessonSectionType,
+} from '../types/lessons.types.ts'
 
 type LessonPathId = 'vocab' | 'grammar' | 'reading' | 'listening'
 
-const lessonPathOptions: { id: LessonPathId; label: string }[] = [
-  { id: 'vocab', label: 'Vocab' },
-  { id: 'grammar', label: 'Grammar' },
-  { id: 'reading', label: 'Reading' },
-  { id: 'listening', label: 'Listening' },
+const lessonPathOptions: {
+  id: LessonPathId
+  label: string
+  sectionType: LessonSectionType
+}[] = [
+  { id: 'vocab', label: 'Vocab', sectionType: 'VOCAB' },
+  { id: 'grammar', label: 'Grammar', sectionType: 'GRAMMAR' },
+  { id: 'reading', label: 'Reading', sectionType: 'READING' },
+  { id: 'listening', label: 'Listening', sectionType: 'LISTENING' },
 ]
 
 const minimumModuleFillPercent = 6
@@ -46,6 +54,7 @@ function createPreviewLessonSectionsData(lessonId: number | null): LessonSection
       orderNum: index + 1,
     })),
     overallProgressPercent: 25,
+    selectedTypes: ['VOCAB', 'GRAMMAR', 'READING', 'LISTENING'],
     sections: previewLessonTitles.map((title, index) => ({
       sectionId: -(courseOrder * 1000 + lessonOrder * 10 + index + 1),
       type:
@@ -118,13 +127,44 @@ function LessonDetailPage({
   const isPreviewLesson = lessonId !== null && lessonId < 0
   const { data, loading, error } = useLessonSections(isPreviewLesson ? null : lessonId)
   const saveProgress = useSaveSectionProgress()
+  const updatePreferences = useUpdateLessonPreferences()
+  const savePreferences = updatePreferences.mutate
 
   const [isLessonPickerOpen, setIsLessonPickerOpen] = useState(false)
-  const [selectedPathIds, setSelectedPathIds] = useState<Set<LessonPathId>>(
-    () => new Set<LessonPathId>(lessonPathOptions.map((option) => option.id)),
-  )
+  const [selectedPathIds, setSelectedPathIds] = useState<Set<LessonPathId> | null>(null)
   const [selectedModuleId, setSelectedModuleId] = useState<number | null>(null)
   const [completedSectionIds, setCompletedSectionIds] = useState<Set<number>>(() => new Set())
+  const serverSelectedTypes = new Set(
+    data?.selectedTypes ?? lessonPathOptions.map((option) => option.sectionType),
+  )
+  const effectiveSelectedPathIds =
+    selectedPathIds ??
+    new Set(
+      lessonPathOptions
+        .filter((option) => serverSelectedTypes.has(option.sectionType))
+        .map((option) => option.id),
+    )
+
+  useEffect(() => {
+    if (
+      !data ||
+      lessonId === null ||
+      lessonId < 0 ||
+      selectedPathIds === null ||
+      selectedPathIds.size === 0
+    ) return
+
+    const timer = window.setTimeout(() => {
+      savePreferences({
+        lessonId,
+        selectedTypes: lessonPathOptions
+          .filter((option) => selectedPathIds.has(option.id))
+          .map((option) => option.sectionType),
+      })
+    }, 300)
+
+    return () => window.clearTimeout(timer)
+  }, [data, lessonId, savePreferences, selectedPathIds])
 
   const lessonData = data ?? (isPreviewLesson ? createPreviewLessonSectionsData(lessonId) : null)
   const sections = lessonData?.sections ?? []
@@ -147,7 +187,7 @@ function LessonDetailPage({
   const lessonTitle = lessonData?.title ?? ''
   const displayedSections = sections.filter((section) => {
     const pathId = getSectionPathId(section.type)
-    return pathId === null || selectedPathIds.has(pathId)
+    return pathId === null || effectiveSelectedPathIds.has(pathId)
   })
   const initialSelectedModuleId =
     initialSelectedModuleOrder !== undefined
@@ -169,7 +209,7 @@ function LessonDetailPage({
 
   const togglePath = (pathId: LessonPathId) => {
     setSelectedPathIds((current) => {
-      const next = new Set(current)
+      const next = new Set(current ?? effectiveSelectedPathIds)
 
       if (next.has(pathId)) {
         if (next.size === 1) return current
@@ -214,7 +254,7 @@ function LessonDetailPage({
           currentPage: section.totalPages || 1,
           stayTimeSeconds: 0,
           forceComplete: true,
-          difficulty: 'NORMAL',
+          difficulty: section.type === 'GRAMMAR' ? 'NORMAL' : undefined,
         },
       })
       setCompletedSectionIds((current) => new Set(current).add(effectiveSelectedModuleId))
@@ -390,16 +430,16 @@ function LessonDetailPage({
                 type="button"
                 className="lesson-detail-path-item"
                 role="checkbox"
-                aria-checked={selectedPathIds.has(option.id)}
+                aria-checked={effectiveSelectedPathIds.has(option.id)}
                 onClick={() => togglePath(option.id)}
               >
                 <span
                   className={`lesson-detail-path-box ${
-                    selectedPathIds.has(option.id) ? 'lesson-detail-path-box-selected' : ''
+                    effectiveSelectedPathIds.has(option.id) ? 'lesson-detail-path-box-selected' : ''
                   }`}
                   aria-hidden="true"
                 >
-                  {selectedPathIds.has(option.id) ? (
+                  {effectiveSelectedPathIds.has(option.id) ? (
                     <svg width="10" height="10" viewBox="0 0 10 10" fill="none" aria-hidden="true">
                       <path
                         d="M2.1 5.1L4.1 7.1L7.9 2.9"

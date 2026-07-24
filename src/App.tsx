@@ -430,7 +430,8 @@ function App() {
       return
     }
 
-    handleUnauthorized()
+    const timer = window.setTimeout(handleUnauthorized, 0)
+    return () => window.clearTimeout(timer)
   }, [authSession, handleUnauthorized, isSettingScreen, settingUnauthorizedError])
 
   useEffect(() => {
@@ -462,13 +463,18 @@ function App() {
 
     if (userMeError) {
       if (shouldClearAuthForUserMeError) {
-        handleUnauthorized()
+        const timer = window.setTimeout(handleUnauthorized, 0)
+        return () => window.clearTimeout(timer)
       }
 
       return
     }
 
-    setScreen(hasCompletedOnboarding ? 'home' : 'onboarding')
+    const timer = window.setTimeout(
+      () => setScreen(hasCompletedOnboarding ? 'home' : 'onboarding'),
+      0,
+    )
+    return () => window.clearTimeout(timer)
   }, [
     authSession,
     handleUnauthorized,

@@ -119,9 +119,10 @@ export interface SectionCheckAnswerResponse {
 
 export interface SaveProgressRequest {
     currentPage: number;
+    pageNumber?: number;
     stayTimeSeconds: number;
-    forceComplete: boolean;
-    difficulty: string;
+    forceComplete?: boolean;
+    difficulty?: 'EASY' | 'NORMAL' | 'HARD';
 }
 
 export interface ProgressLog {
