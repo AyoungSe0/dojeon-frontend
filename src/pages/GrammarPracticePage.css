@@ -2226,125 +2226,18 @@
   flex: 0 0 auto;
 }
 
-.grammar-practice-listening-player {
+.grammar-practice-listening-audio-icon {
   width: 350px;
-  height: 38px;
-  margin-top: 12px;
-  border-radius: 4px;
-  background: var(--dojeon-color-gray-50);
-  box-sizing: border-box;
-  padding: 0 14px;
-  display: flex;
-  align-items: center;
-}
-
-.grammar-practice-listening-play {
-  width: 18px;
-  height: 18px;
-  padding: 0;
-  border: 0;
-  background: transparent;
-  color: var(--dojeon-color-gray-900);
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  cursor: pointer;
-}
-
-.grammar-practice-listening-time {
-  margin-left: 13px;
-  color: var(--dojeon-color-gray-900);
-  font-size: 12px;
-  font-weight: 400;
-  line-height: 1.2;
-}
-
-.grammar-practice-listening-time:last-child {
-  margin-left: 12px;
-}
-
-.grammar-practice-listening-progress {
-  width: 100%;
-  flex: 1 1 auto;
-  height: 4px;
-  margin-left: 12px;
-  border-radius: 999px;
-  background: var(--dojeon-color-gray-300);
-  overflow: visible;
-  position: relative;
-  cursor: grab;
-  touch-action: none;
-}
-
-.grammar-practice-listening-progress-fill {
-  display: block;
-  width: 58%;
-  height: 100%;
-  border-radius: inherit;
-  background: var(--dojeon-color-gray-600);
-  position: relative;
-}
-
-.grammar-practice-listening-progress-fill::after {
-  content: '';
-  position: absolute;
-  top: 50%;
-  right: -4px;
-  width: 12px;
-  height: 12px;
-  border-radius: 50%;
-  background: var(--dojeon-color-gray-700);
-  transform: translateY(-50%);
-  z-index: 1;
-}
-
-.grammar-practice-listening-progress.is-scrubbing {
-  cursor: grabbing;
-}
-
-.grammar-practice-listening-show-text-wrap {
-  width: 350px;
-  min-height: 184px;
   margin-top: 12px;
   display: flex;
   justify-content: center;
   align-items: center;
-}
-
-.grammar-practice-listening-screen-script-visible .grammar-practice-listening-show-text-wrap {
-  min-height: 0;
-  align-items: flex-start;
-}
-
-.grammar-practice-listening-show-text-button {
-  width: 154px;
-  height: 48px;
-  border: 1px solid var(--dojeon-color-primary-action);
-  border-radius: 10px;
-  background: var(--dojeon-color-surface);
   color: var(--dojeon-color-primary-action);
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  gap: 8px;
-  font-size: 12px;
-  font-weight: 500;
-  line-height: 1.2;
-  opacity: 0;
-  pointer-events: none;
-}
-
-.grammar-practice-listening-show-text-button-active {
-  opacity: 1;
-  pointer-events: auto;
-}
-
-.grammar-practice-listening-show-text-icon {
-  flex: 0 0 auto;
 }
 
 .grammar-practice-listening-script-card {
   width: 350px;
+  margin-top: 12px;
   border-radius: 10px;
   background: var(--dojeon-color-primary-100);
   padding: 18px 18px 17px;

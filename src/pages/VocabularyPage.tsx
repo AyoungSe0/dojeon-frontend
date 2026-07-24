@@ -7,8 +7,10 @@ interface VocabularyPageProps {
   onBack: () => void
 }
 
+const getWordFront = (item: VocabScrapItem) => item.card?.wordFront ?? 'Unknown word'
+
 const getTranslation = (item: VocabScrapItem) =>
-  item.card?.locales?.en?.back ?? item.card?.wordBack ?? ''
+  item.card?.locales?.en?.back ?? item.card?.wordBack ?? 'No translation yet.'
 
 const getNotes = (item: VocabScrapItem) =>
   item.card?.locales?.en?.notes ?? item.card?.notes ?? 'No notes yet.'
@@ -330,7 +332,7 @@ function CourseList({
           <div className="vocabulary-card-items">
             {group.items.slice(0, 4).map((item, index) => (
               <p key={item.scrapId}>
-                {index + 1}. {item.card?.wordFront ?? ''}
+                {index + 1}. {getWordFront(item)}
               </p>
             ))}
           </div>
@@ -414,7 +416,7 @@ function WordList({
                       />
                     </svg>
                   </button>
-                  <span>{item.card?.wordFront ?? ''}</span>
+                  <span>{getWordFront(item)}</span>
                   <span>{getTranslation(item)}</span>
                   <button
                     type="button"
@@ -482,7 +484,7 @@ function WordDetail({
   index: number
   onRemove: () => void
 }) {
-  const word = item.card?.wordFront ?? ''
+  const word = getWordFront(item)
   const translation = getTranslation(item)
   const notes = getNotes(item)
   const example = getExample(item)

@@ -323,7 +323,7 @@ function AccountInfoPage({
       editField: 'phoneNumber' as const,
     },
     {
-      label: 'Age group / Birthday',
+      label: 'Age',
       value: displayedAgeGroupOrBirthday || '-',
       editable: true,
       editField: 'ageGroupOrBirthday' as const,

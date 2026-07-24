@@ -121,7 +121,7 @@ function LessonDetailPage({
 
   const [isLessonPickerOpen, setIsLessonPickerOpen] = useState(false)
   const [selectedPathIds, setSelectedPathIds] = useState<Set<LessonPathId>>(
-    () => new Set<LessonPathId>(['vocab']),
+    () => new Set<LessonPathId>(lessonPathOptions.map((option) => option.id)),
   )
   const [selectedModuleId, setSelectedModuleId] = useState<number | null>(null)
   const [completedSectionIds, setCompletedSectionIds] = useState<Set<number>>(() => new Set())

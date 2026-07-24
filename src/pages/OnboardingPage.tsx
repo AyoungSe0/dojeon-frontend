@@ -2,6 +2,7 @@ import { useMemo, useState } from 'react'
 import './OnboardingPage.css'
 import onboardingCharacter from '../assets/9.png'
 import onboardingCompleteCharacter from '../assets/6.png'
+import { AGE_RANGE_OPTIONS, isValidAgeRange } from '../data/ageRanges'
 import {
   dailyStudyTimeChoices,
   koreanLevelChoices,
@@ -82,23 +83,8 @@ const onboardingSteps: OnboardingStep[] = [
     choiceStyle: 'short',
     progressStyle: 'medium',
     progressStep: 4,
-    choices: [
-      { id: '0-17', label: '0-17' },
-      { id: '18-24', label: '18-24' },
-      { id: '25-34', label: '25-34' },
-      { id: '35-44', label: '35-44' },
-      { id: '45-54', label: '45-54' },
-      { id: '55-64', label: '55-64' },
-      { id: '65-', label: '65 -' },
-    ],
-    validator: (value) =>
-      value === '0-17' ||
-      value === '18-24' ||
-      value === '25-34' ||
-      value === '35-44' ||
-      value === '45-54' ||
-      value === '55-64' ||
-      value === '65-',
+    choices: AGE_RANGE_OPTIONS,
+    validator: (value) => isValidAgeRange(value),
   },
   {
     id: 'dailyStudyTime',
