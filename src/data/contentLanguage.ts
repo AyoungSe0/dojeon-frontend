@@ -11,20 +11,6 @@ export type ContentLanguage = 'en' | 'he'
 
 export const DEFAULT_CONTENT_LANGUAGE: ContentLanguage = 'en'
 
-export interface MotherLanguageOption {
-  id: string
-  label: string
-}
-
-// 온보딩과 Preferences에서 공통으로 사용하는 mother language 선택지.
-export const MOTHER_LANGUAGE_OPTIONS: MotherLanguageOption[] = [
-  { id: 'Hebrew', label: 'Hebrew' },
-  { id: 'English', label: 'English' },
-]
-
-export const isValidMotherLanguage = (value: string): boolean =>
-  MOTHER_LANGUAGE_OPTIONS.some((option) => option.id === value)
-
 const HEBREW_TAGS = new Set(['hebrew', 'he', 'heb', 'iw', 'he-il', 'iw-il', 'עברית'])
 const ENGLISH_TAGS = new Set(['english', 'en', 'eng', 'en-us', 'en-gb'])
 

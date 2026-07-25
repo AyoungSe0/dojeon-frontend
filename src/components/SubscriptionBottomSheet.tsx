@@ -8,11 +8,13 @@ import closeRoundedIcon from '../assets/close-rounded_icon.svg'
 import checkIconGray from '../assets/check_icon_gray.svg'
 import { useSubscriptionPlans } from '../hooks/useSubscriptionPlans'
 import type { SubscriptionPlan } from '../types/subscription.types'
+import { isUnauthorizedError } from '../services/apiError'
 
 interface SubscriptionBottomSheetProps {
   currentSubscriptionPlanId: string | null
   currentSubscriptionTier: string
   onClose: () => void
+  onUnauthorized: () => void
 }
 
 type SubscriptionSelectionMode = 'free' | 'trial' | 'pro'
@@ -62,6 +64,7 @@ function SubscriptionBottomSheet({
   currentSubscriptionPlanId,
   currentSubscriptionTier,
   onClose,
+  onUnauthorized,
 }: SubscriptionBottomSheetProps) {
   const {
     data: subscriptionPlansData,
@@ -70,6 +73,11 @@ function SubscriptionBottomSheet({
     refetch,
   } = useSubscriptionPlans(true)
   const [selectedPlanIdOverride, setSelectedPlanIdOverride] = useState('')
+  const isUnauthorized = isUnauthorizedError(error)
+
+  useEffect(() => {
+    if (isUnauthorized) onUnauthorized()
+  }, [isUnauthorized, onUnauthorized])
   const [selectedModeOverride, setSelectedModeOverride] =
     useState<SubscriptionSelectionMode | null>(null)
   const sheetRef = useRef<HTMLElement | null>(null)
@@ -154,6 +162,8 @@ function SubscriptionBottomSheet({
       previouslyFocusedElementRef.current?.focus()
     }
   }, [onClose])
+
+  if (isUnauthorized) return null
 
   return (
     <div className="subscription-sheet-backdrop" role="presentation" onClick={onClose}>

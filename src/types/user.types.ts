@@ -66,10 +66,10 @@ export interface UserAchievement {
 
 export interface UserMeData {
   profile: UserProfile
-  stats: UserStats
-  attendance: UserAttendance
+  stats: UserStats | null
+  attendance: UserAttendance | null
   recentCourse: UserRecentCourse | null
-  recentAchievements: UserAchievement[]
+  recentAchievements: UserAchievement[] | null
 }
 
 export interface UserMeResponse {

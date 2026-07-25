@@ -5,6 +5,7 @@ import { useSectionCards } from '../hooks/useSectionCards.ts'
 import { useCreateScrap } from '../hooks/useCreateScrap.ts'
 import { useDeleteScrap } from '../hooks/useDeleteScrap.ts'
 import { useSaveSectionProgress } from '../hooks/useSaveSectionProgress.ts'
+import { useSectionPageTimer } from '../hooks/useSectionPageTimer.ts'
 import {
   contentTextDirection,
   pickLocaleText,
@@ -123,6 +124,12 @@ function VocabularyLessonPage({
     },
     [cardsData, contentLanguage],
   )
+
+  useSectionPageTimer({
+    sectionId,
+    pageNumber: currentCardIndex,
+    enabled: !cardsLoading && view === 'card' && vocabularyItems.length > 0,
+  })
 
   const currentCard = vocabularyItems[currentCardIndex]
   const carouselEntries = [
@@ -256,7 +263,6 @@ function VocabularyLessonPage({
           currentPage: Math.max(1, vocabularyItems.length),
           stayTimeSeconds: 0,
           forceComplete: true,
-          difficulty: 'NORMAL',
         },
       })
       const nextGrammarSectionId =

@@ -1,4 +1,4 @@
-import { getAuthToken } from './session.ts'
+import { authenticatedFetch, getAuthToken } from './session.ts'
 import type {
   ApiResponse,
   ChangePasswordData,
@@ -96,7 +96,7 @@ async function requestUserApi<T>(
   let res: Response
 
   try {
-    res = await fetch(`${API_BASE_URL}${path}`, {
+    res = await authenticatedFetch(`${API_BASE_URL}${path}`, {
       ...init,
       headers: buildHeaders({
         ...(init.body ? { 'Content-Type': 'application/json' } : {}),
@@ -130,7 +130,7 @@ export async function fetchUserMe(signal?: AbortSignal): Promise<UserMeData | nu
   let res: Response
 
   try {
-    res = await fetch(`${API_BASE_URL}/user/me`, {
+    res = await authenticatedFetch(`${API_BASE_URL}/user/me`, {
       method: 'GET',
       headers: buildHeaders(),
       signal,
@@ -167,7 +167,7 @@ export async function patchUserMe(payload: PatchUserRequest): Promise<PatchUserD
   let res: Response
 
   try {
-    res = await fetch(`${API_BASE_URL}/user/me`, {
+    res = await authenticatedFetch(`${API_BASE_URL}/user/me`, {
       method: 'PATCH',
       headers: buildHeaders({ 'Content-Type': 'application/json' }),
       body: JSON.stringify(payload),

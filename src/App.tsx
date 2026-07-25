@@ -21,6 +21,8 @@ import LessonDetailPage from './pages/LessonDetailPage'
 import VocabularyLessonPage from './pages/VocabularyLessonPage'
 import ProfileMainPage from './pages/ProfileMainPage'
 import ProfileAchievementsPage from './pages/ProfileAchievementsPage'
+import type { PatchUserRequest } from './types/user.types'
+import { isUnauthorizedError } from './services/apiError'
 import { useChangeUserPassword } from './hooks/useChangeUserPassword.ts'
 import { useUpdateUserMe } from './hooks/useUpdateUserMe.ts'
 import { useUserMe } from './hooks/useUserMe.ts'
@@ -69,10 +71,6 @@ const removeLocalStorageItem = (key: string) => {
   } catch {
     // localStorage can fail in private mode or restricted environments.
   }
-}
-
-const markOnboardingComplete = () => {
-  writeLocalStorageItem(ONBOARDING_COMPLETED_KEY, 'true')
 }
 
 const getOnboardingUsername = () => {
@@ -157,12 +155,16 @@ const getBirthdayOrAgeGroupPayload = (value: string) => {
   const trimmed = value.trim()
   if (!trimmed) return {}
 
-  if (/^\d{4}-\d{2}-\d{2}$/.test(trimmed)) {
-    return { birthday: trimmed }
+  if (/^\d{4}[-.]\d{2}[-.]\d{2}$/.test(trimmed)) {
+    return { birthday: trimmed.replaceAll('.', '-') }
   }
 
   return { ageGroup: trimmed }
 }
+
+const normalizeBirthdayForApi = (value: string) => value.trim().replaceAll('.', '-')
+
+const isBirthdayValue = (value: string) => /^\d{4}[-.]\d{2}[-.]\d{2}$/.test(value.trim())
 
 type Screen =
   | 'splash' | 'login' | 'signup' | 'verify-email' | 'verify-success'
@@ -272,6 +274,18 @@ const getDevPreviewLessonModuleOrder = () => {
   return Number.isFinite(module) ? Math.max(1, module) : undefined
 }
 
+interface ProfileSyncValues {
+  name: string
+  phoneNumber?: string
+  ageRange: string
+  ageGroup?: string
+  birthday?: string
+  language: string
+  koreanLevel: string
+  dailyGoal: string
+  koreanGoal: string
+}
+
 function App() {
   const queryClient = useQueryClient()
   const updateUserMe = useUpdateUserMe()
@@ -280,13 +294,17 @@ function App() {
   const [authSession, setAuthSession] = useState<AuthSession | null>(getStoredAuthSession)
   const [pendingSignup, setPendingSignup] = useState<SignupSubmission | null>(null)
   const [userName, setUserName] = useState(getOnboardingUsername)
-  const [ageRange, setAgeRange] = useState(getStoredAgeRange)
+  const [, setAgeRange] = useState(getStoredAgeRange)
+  const [accountAgeGroup, setAccountAgeGroup] = useState('')
+  const [accountBirthday, setAccountBirthday] = useState('')
   const [phoneNumber, setPhoneNumber] = useState(getStoredPhoneNumber)
   const [language, setLanguage] = useState(getStoredLanguage)
   const [koreanLevel, setKoreanLevel] = useState(getStoredKoreanLevel)
   const [dailyGoal, setDailyGoal] = useState(getStoredDailyGoal)
   const [koreanGoal, setKoreanGoal] = useState(getStoredKoreanGoal)
   const [isSigningOut, setIsSigningOut] = useState(false)
+  const [minSplashElapsed, setMinSplashElapsed] = useState(false)
+  const [onboardingSaveError, setOnboardingSaveError] = useState('')
   const [selectedLessonNumericId, setSelectedLessonNumericId] = useState<number | null>(
     getInitialLessonId,
   )
@@ -303,16 +321,25 @@ function App() {
     'class',
   )
   const [settingBackScreen, setSettingBackScreen] = useState<'home' | 'profile-main'>('home')
-  const { data: userMeData } = useUserMe(Boolean(authSession))
+  const {
+    data: userMeData,
+    error: userMeError,
+    loaded: isUserMeLoaded,
+    loading: isUserMeLoading,
+  } = useUserMe(Boolean(authSession))
 
   const currentEmail = authSession?.email ?? pendingSignup?.email ?? ''
-  const currentUsername = currentEmail ? currentEmail.split('@')[0] : userName
+  const currentUsername =
+    userMeData?.profile.username?.trim() ||
+    (currentEmail ? currentEmail.split('@')[0] : userName)
   const isPushNotificationOn = userMeData?.profile.isPushNotificationOn ?? true
   const isDevPreview = getDevPreviewScreen() !== null
 
   const resetLocalProfileState = () => {
     setUserName('Jinri')
     setAgeRange('')
+    setAccountAgeGroup('')
+    setAccountBirthday('')
     setPhoneNumber('')
     setLanguage('')
     setKoreanLevel('')
@@ -333,22 +360,31 @@ function App() {
   const handleUnauthorized = useCallback(() => {
     clearStoredAuthSession()
     clearAccountScopedQueries()
+    updateUserMe.reset()
+    changeUserPassword.reset()
     setAuthSession(null)
     setPendingSignup(null)
     setSettingBackScreen('home')
     setScreen('login')
-  }, [clearAccountScopedQueries])
+  }, [changeUserPassword, clearAccountScopedQueries, updateUserMe])
 
-  const hasCompletedOnboarding =
-    readLocalStorageItem(ONBOARDING_COMPLETED_KEY) === 'true'
+  const hasCompletedOnboarding = isUserMeLoaded && userMeData?.profile.isOnboarded === true
+  const shouldWaitForUserMe =
+    Boolean(authSession) && !userMeError && (!isUserMeLoaded || isUserMeLoading)
+  const shouldClearAuthForUserMeError =
+    isUnauthorizedError(userMeError)
+  const isSettingScreen =
+    screen === 'setting' || screen === 'account-info' || screen === 'preferences'
+  const settingUnauthorizedError = [
+    userMeError,
+    updateUserMe.error,
+    changeUserPassword.error,
+  ].find(isUnauthorizedError)
+  const visibleScreen = screen === 'splash' && minSplashElapsed && !authSession ? 'login' : screen
 
-  const handleEnterAfterAuth = () => {
-    if (hasCompletedOnboarding) {
-      setScreen('home')
-      return
-    }
-
-    setScreen('onboarding')
+  const showSplash = () => {
+    setMinSplashElapsed(false)
+    setScreen('splash')
   }
 
   const persistAuthSession = (email: string, tokenData: AuthTokenData) => {
@@ -364,24 +400,91 @@ function App() {
     setAuthSession(nextSession)
   }
 
+  const syncProfileState = useCallback((values: ProfileSyncValues) => {
+    saveOnboardingUsername(values.name)
+    writeLocalStorageItem(ACCOUNT_AGE_RANGE_KEY, values.ageRange)
+    writeLocalStorageItem(ACCOUNT_LANGUAGE_KEY, values.language)
+    writeLocalStorageItem(ACCOUNT_KOREAN_LEVEL_KEY, values.koreanLevel)
+    writeLocalStorageItem(ACCOUNT_DAILY_GOAL_KEY, values.dailyGoal)
+    writeLocalStorageItem(ACCOUNT_KOREAN_GOAL_KEY, values.koreanGoal)
+
+    if (values.phoneNumber !== undefined) {
+      writeLocalStorageItem(ACCOUNT_PHONE_NUMBER_KEY, values.phoneNumber)
+      setPhoneNumber(values.phoneNumber)
+    }
+
+    setUserName(values.name)
+    setAgeRange(values.ageRange)
+    setAccountAgeGroup(
+      values.ageGroup ?? (!values.birthday && !isBirthdayValue(values.ageRange) ? values.ageRange : ''),
+    )
+    setAccountBirthday(values.birthday ?? (isBirthdayValue(values.ageRange) ? values.ageRange : ''))
+    setLanguage(values.language)
+    setKoreanLevel(values.koreanLevel)
+    setDailyGoal(values.dailyGoal)
+    setKoreanGoal(values.koreanGoal)
+  }, [])
+
+  useEffect(() => {
+    if (!authSession || !isSettingScreen || !settingUnauthorizedError) {
+      return
+    }
+
+    const timer = window.setTimeout(handleUnauthorized, 0)
+    return () => window.clearTimeout(timer)
+  }, [authSession, handleUnauthorized, isSettingScreen, settingUnauthorizedError])
+
   useEffect(() => {
     if (screen !== 'splash') {
       return
     }
 
-    const timer = window.setTimeout(() => {
-      if (authSession) {
-        setScreen(hasCompletedOnboarding ? 'home' : 'onboarding')
-        return
-      }
+    if (minSplashElapsed) {
+      return
+    }
 
-      setScreen('login')
+    const timer = window.setTimeout(() => {
+      setMinSplashElapsed(true)
     }, 1200)
 
     return () => {
       window.clearTimeout(timer)
     }
-  }, [authSession, hasCompletedOnboarding, screen])
+  }, [minSplashElapsed, screen])
+
+  useEffect(() => {
+    if (screen !== 'splash' || !minSplashElapsed) {
+      return
+    }
+
+    if (shouldWaitForUserMe) {
+      return
+    }
+
+    if (userMeError) {
+      if (shouldClearAuthForUserMeError) {
+        const timer = window.setTimeout(handleUnauthorized, 0)
+        return () => window.clearTimeout(timer)
+      }
+
+      return
+    }
+
+    const timer = window.setTimeout(
+      () => setScreen(hasCompletedOnboarding ? 'home' : 'onboarding'),
+      0,
+    )
+    return () => window.clearTimeout(timer)
+  }, [
+    authSession,
+    handleUnauthorized,
+    hasCompletedOnboarding,
+    minSplashElapsed,
+    screen,
+    shouldClearAuthForUserMeError,
+    shouldWaitForUserMe,
+    userMeError,
+  ])
 
   useEffect(() => {
     if (!authSession?.email) {
@@ -409,35 +512,33 @@ function App() {
 
     const nextName = userMeData.profile.nickname?.trim() || getOnboardingUsername()
     const nextPhoneNumber = userMeData.profile.phoneNumber ?? ''
-    const nextAgeRange = userMeData.profile.birthday ?? userMeData.profile.ageGroup ?? ''
+    const nextAgeGroup = userMeData.profile.ageGroup ?? ''
+    const nextBirthday = userMeData.profile.birthday ?? ''
+    const nextAgeRange = nextBirthday || nextAgeGroup
     // 서버에 mother language가 아직 없으면 온보딩에서 고른 값을 덮어쓰지 않는다.
     const nextLanguage = userMeData.profile.motherLanguage ?? getStoredLanguage()
     const nextKoreanLevel = userMeData.profile.proficiencyLevel ?? ''
     const nextDailyGoal = userMeData.profile.dailyGoalMin?.toString() ?? ''
     const nextKoreanGoal = userMeData.profile.learningGoal ?? ''
 
-    saveOnboardingUsername(nextName)
-    writeLocalStorageItem(ACCOUNT_PHONE_NUMBER_KEY, nextPhoneNumber)
-    writeLocalStorageItem(ACCOUNT_AGE_RANGE_KEY, nextAgeRange)
-    writeLocalStorageItem(ACCOUNT_LANGUAGE_KEY, nextLanguage)
-    writeLocalStorageItem(ACCOUNT_KOREAN_LEVEL_KEY, nextKoreanLevel)
-    writeLocalStorageItem(ACCOUNT_DAILY_GOAL_KEY, nextDailyGoal)
-    writeLocalStorageItem(ACCOUNT_KOREAN_GOAL_KEY, nextKoreanGoal)
-
     const timer = window.setTimeout(() => {
-      setUserName(nextName)
-      setPhoneNumber(nextPhoneNumber)
-      setAgeRange(nextAgeRange)
-      setLanguage(nextLanguage)
-      setKoreanLevel(nextKoreanLevel)
-      setDailyGoal(nextDailyGoal)
-      setKoreanGoal(nextKoreanGoal)
+      syncProfileState({
+        name: nextName,
+        phoneNumber: nextPhoneNumber,
+        ageRange: nextAgeRange,
+        ageGroup: nextAgeGroup,
+        birthday: nextBirthday,
+        language: nextLanguage,
+        koreanLevel: nextKoreanLevel,
+        dailyGoal: nextDailyGoal,
+        koreanGoal: nextKoreanGoal,
+      })
     }, 0)
 
     return () => {
       window.clearTimeout(timer)
     }
-  }, [authSession, userMeData])
+  }, [authSession, syncProfileState, userMeData])
 
   const handleLogout = async () => {
     setIsSigningOut(true)
@@ -453,6 +554,11 @@ function App() {
       setIsSigningOut(false)
     }
   }
+
+  const clearAccountInfoSaveError = useCallback(() => {
+    updateUserMe.reset()
+    changeUserPassword.reset()
+  }, [changeUserPassword, updateUserMe])
 
   const handleOpenSection = (
     sectionId: number,
@@ -508,9 +614,9 @@ function App() {
         </button>
       ) : null}
 
-      {screen === 'splash' ? (
+      {visibleScreen === 'splash' ? (
         <SplashPage />
-      ) : screen === 'signup' ? (
+      ) : visibleScreen === 'signup' ? (
         <SignupPage
           onBack={() => setScreen('login')}
           onSignupSuccess={(payload) => {
@@ -518,7 +624,7 @@ function App() {
             setScreen('verify-email')
           }}
         />
-      ) : screen === 'verify-email' ? (
+      ) : visibleScreen === 'verify-email' ? (
         <VerifyEmailPage
           email={pendingSignup?.email ?? ''}
           onBack={() => setScreen('signup')}
@@ -537,49 +643,57 @@ function App() {
             setScreen('verify-success')
           }}
         />
-      ) : screen === 'verify-success' ? (
+      ) : visibleScreen === 'verify-success' ? (
         <VerifySuccessPage
           onStartLearning={() => {
-            handleEnterAfterAuth()
+            showSplash()
           }}
         />
-      ) : screen === 'onboarding' ? (
+      ) : visibleScreen === 'onboarding' ? (
         <OnboardingPage
           onBack={() => setScreen('login')}
-          onComplete={(values) => {
+          isSaving={updateUserMe.isPending}
+          saveError={onboardingSaveError}
+          onComplete={async (values) => {
             const savedName = values.name?.trim() || 'Jinri'
             const savedAgeRange = values.ageRange ?? ''
             const savedLanguage = values.motherLanguage ?? ''
             const savedKoreanLevel = values.koreanLevel ?? ''
             const savedDailyGoal = values.dailyStudyTime ?? ''
             const savedKoreanGoal = values.goal ?? ''
+            setOnboardingSaveError('')
 
-            // 온보딩 선택값을 서버에도 저장해야 이후 /user/me 동기화에서 지워지지 않는다.
-            if (authSession && savedLanguage) {
-              updateUserMe
-                .mutateAsync({ motherLanguage: savedLanguage })
-                .catch(() => {
-                  // 저장에 실패해도 로컬 값으로 학습 화면은 계속 진행한다.
-                })
+            try {
+              await updateUserMe.mutateAsync({
+                nickname: savedName,
+                motherLanguage: getOptionalString(savedLanguage),
+                proficiencyLevel: getOptionalString(savedKoreanLevel),
+                dailyGoalMin: getOptionalNumber(savedDailyGoal),
+                learningGoal: getOptionalString(savedKoreanGoal),
+                ...getBirthdayOrAgeGroupPayload(savedAgeRange),
+                isOnboarded: true,
+              })
+            } catch (error) {
+              setOnboardingSaveError(
+                error instanceof Error ? error.message : 'Failed to save onboarding.',
+              )
+              return
             }
 
-            setUserName(savedName)
-            setAgeRange(savedAgeRange)
-            setLanguage(savedLanguage)
-            setKoreanLevel(savedKoreanLevel)
-            setDailyGoal(savedDailyGoal)
-            setKoreanGoal(savedKoreanGoal)
-            saveOnboardingUsername(savedName)
-            writeLocalStorageItem(ACCOUNT_AGE_RANGE_KEY, savedAgeRange)
-            writeLocalStorageItem(ACCOUNT_LANGUAGE_KEY, savedLanguage)
-            writeLocalStorageItem(ACCOUNT_KOREAN_LEVEL_KEY, savedKoreanLevel)
-            writeLocalStorageItem(ACCOUNT_DAILY_GOAL_KEY, savedDailyGoal)
-            writeLocalStorageItem(ACCOUNT_KOREAN_GOAL_KEY, savedKoreanGoal)
-            markOnboardingComplete()
+            syncProfileState({
+              name: savedName,
+              ageRange: savedAgeRange,
+              ageGroup: isBirthdayValue(savedAgeRange) ? '' : savedAgeRange,
+              birthday: isBirthdayValue(savedAgeRange) ? normalizeBirthdayForApi(savedAgeRange) : '',
+              language: savedLanguage,
+              koreanLevel: savedKoreanLevel,
+              dailyGoal: savedDailyGoal,
+              koreanGoal: savedKoreanGoal,
+            })
             setScreen('home')
           }}
         />
-      ) : screen === 'home' ? (
+      ) : visibleScreen === 'home' ? (
         <HomePage
           userName={userName}
           onOpenClass={() => {
@@ -599,7 +713,7 @@ function App() {
             handleOpenSection(lesson.sectionId, lesson.sectionType, 'class')
           }}
         />
-      ) : screen === 'class' ? (
+      ) : visibleScreen === 'class' ? (
         <ClassPage
           preferFallbackContent={isDevPreview}
           defaultOpenCourseOrder={getDevPreviewCourseOrder()}
@@ -621,7 +735,7 @@ function App() {
             setScreen('lesson-detail')
           }}
         />
-      ) : screen === 'lesson-detail' ? (
+      ) : visibleScreen === 'lesson-detail' ? (
         <LessonDetailPage
           key={selectedLessonNumericId ?? 'none'}
           lessonId={selectedLessonNumericId}
@@ -636,7 +750,7 @@ function App() {
             setScreen('class')
           }}
         />
-      ) : screen === 'practice' ? (
+      ) : visibleScreen === 'practice' ? (
         <PracticePage
           onBack={() => {
             setScreen('home')
@@ -654,7 +768,7 @@ function App() {
             setScreen('profile-main')
           }}
         />
-      ) : screen === 'setting' ? (
+      ) : visibleScreen === 'setting' ? (
         <SettingPage
           onBack={() => {
             setScreen(settingBackScreen)
@@ -676,45 +790,77 @@ function App() {
           }}
           isSigningOut={isSigningOut}
           isSavingNotification={updateUserMe.isPending}
+          notificationError={
+            isUnauthorizedError(updateUserMe.error) ? null : updateUserMe.error?.message ?? null
+          }
+          onClearNotificationError={() => updateUserMe.reset()}
         />
-      ) : screen === 'account-info' ? (
+      ) : visibleScreen === 'account-info' ? (
         <AccountInfoPage
           email={authSession?.email ?? ''}
           username={currentUsername}
           nickname={userName}
           hasPassword={userMeData?.profile.hasPassword ?? true}
           phoneNumber={phoneNumber}
-          ageGroupOrBirthday={ageRange}
+          ageGroup={accountAgeGroup}
+          birthday={accountBirthday}
           onSave={async (values) => {
-            const nextNickname = values.nickname.trim() || 'Jinri'
-            const nextPhoneNumber = values.phoneNumber.trim()
-            const nextAgeGroupOrBirthday = values.ageGroupOrBirthday.trim()
+            const userPatch: PatchUserRequest = {}
 
-            await updateUserMe.mutateAsync({
-              nickname: nextNickname,
-              phoneNumber: getOptionalString(nextPhoneNumber),
-              ...getBirthdayOrAgeGroupPayload(nextAgeGroupOrBirthday),
-            })
+            if (values.nickname !== undefined) {
+              const nextNickname = values.nickname.trim() || 'Jinri'
+              userPatch.nickname = nextNickname
+            }
 
-            setUserName(nextNickname)
-            setPhoneNumber(nextPhoneNumber)
-            setAgeRange(nextAgeGroupOrBirthday)
+            if (values.phoneNumber !== undefined) {
+              const nextPhoneNumber = values.phoneNumber.trim()
+              userPatch.phoneNumber = getOptionalString(nextPhoneNumber)
+            }
 
-            saveOnboardingUsername(nextNickname)
-            writeLocalStorageItem(ACCOUNT_PHONE_NUMBER_KEY, nextPhoneNumber)
-            writeLocalStorageItem(ACCOUNT_AGE_RANGE_KEY, nextAgeGroupOrBirthday)
+            if (values.ageGroup !== undefined) {
+              userPatch.ageGroup = getOptionalString(values.ageGroup.trim())
+            }
+
+            if (values.birthday !== undefined) {
+              userPatch.birthday = getOptionalString(normalizeBirthdayForApi(values.birthday))
+            }
+
+            if (Object.keys(userPatch).length > 0) {
+              await updateUserMe.mutateAsync(userPatch)
+            }
+
+            if (values.nickname !== undefined) {
+              const nextNickname = values.nickname.trim() || 'Jinri'
+              setUserName(nextNickname)
+              saveOnboardingUsername(nextNickname)
+            }
+
+            if (values.phoneNumber !== undefined) {
+              const nextPhoneNumber = values.phoneNumber.trim()
+              setPhoneNumber(nextPhoneNumber)
+              writeLocalStorageItem(ACCOUNT_PHONE_NUMBER_KEY, nextPhoneNumber)
+            }
+
+            if (values.ageGroup !== undefined || values.birthday !== undefined) {
+              await queryClient.invalidateQueries({ queryKey: ['user', 'me'] })
+            }
 
             if (values.passwordChange) {
               await changeUserPassword.mutateAsync(values.passwordChange)
             }
           }}
           isSaving={updateUserMe.isPending || changeUserPassword.isPending}
-          saveError={updateUserMe.error?.message ?? changeUserPassword.error?.message ?? null}
+          saveError={
+            isUnauthorizedError(updateUserMe.error) || isUnauthorizedError(changeUserPassword.error)
+              ? null
+              : updateUserMe.error?.message ?? changeUserPassword.error?.message ?? null
+          }
+          onClearSaveError={clearAccountInfoSaveError}
           onBack={() => {
             setScreen('setting')
           }}
         />
-      ) : screen === 'preferences' ? (
+      ) : visibleScreen === 'preferences' ? (
         <PreferencesPage
           language={language}
           koreanLevel={koreanLevel}
@@ -738,12 +884,13 @@ function App() {
             writeLocalStorageItem(ACCOUNT_KOREAN_GOAL_KEY, values.koreanGoal)
           }}
           isSaving={updateUserMe.isPending}
-          saveError={updateUserMe.error?.message ?? null}
+          saveError={isUnauthorizedError(updateUserMe.error) ? null : updateUserMe.error?.message ?? null}
+          onClearSaveError={clearAccountInfoSaveError}
           onBack={() => {
             setScreen('setting')
           }}
         />
-      ) : screen === 'notebook' ? (
+      ) : visibleScreen === 'notebook' ? (
         <NotebookPage
           userName={userName}
           onOpenGrammarNotebook={() => {
@@ -765,14 +912,14 @@ function App() {
             setScreen('profile-main')
           }}
         />
-      ) : screen === 'vocabulary' ? (
+      ) : visibleScreen === 'vocabulary' ? (
         <VocabularyPage
           language={language}
           onBack={() => {
             setScreen('notebook')
           }}
         />
-      ) : screen === 'vocabulary-lesson' ? (
+      ) : visibleScreen === 'vocabulary-lesson' ? (
         <VocabularyLessonPage
           language={language}
           sectionId={selectedSectionId}
@@ -792,15 +939,16 @@ function App() {
             setScreen('grammar-practice')
           }}
         />
-      ) : screen === 'notebook-grammar' ? (
+      ) : visibleScreen === 'notebook-grammar' ? (
         <GrammarNotebookPage
           language={language}
           onBack={() => {
             setScreen('notebook')
           }}
         />
-      ) : screen === 'profile-main' ? (
+      ) : visibleScreen === 'profile-main' ? (
         <ProfileMainPage
+          preferFallbackContent={isDevPreview}
           nickname={userName}
           username={currentUsername}
           onOpenHome={() => {
@@ -816,20 +964,23 @@ function App() {
             setScreen('notebook')
           }}
           onOpenSetting={() => {
+            clearAccountInfoSaveError()
             setSettingBackScreen('profile-main')
             setScreen('setting')
           }}
           onOpenAchievements={() => {
             setScreen('profile-achievements')
           }}
+          onUnauthorized={handleUnauthorized}
         />
-      ) : screen === 'profile-achievements' ? (
+      ) : visibleScreen === 'profile-achievements' ? (
         <ProfileAchievementsPage
           onBack={() => {
             setScreen('profile-main')
           }}
+          onUnauthorized={handleUnauthorized}
         />
-      ) : screen === 'grammar-practice' ? (
+      ) : visibleScreen === 'grammar-practice' ? (
         <GrammarPracticePage
           initialPracticeStep={grammarPracticeInitialStep}
           language={language}
@@ -845,7 +996,7 @@ function App() {
             const tokenData = await login(credentials)
             persistAuthSession(credentials.email, tokenData)
             setPendingSignup(null)
-            handleEnterAfterAuth()
+            showSplash()
           }}
         />
       )}

@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import './ClassPage.css'
 import homeIcon from '../assets/home.svg'
-import editIcon from '../assets/edit.svg'
+import classIcon from '../assets/Class.svg'
 import fileIcon from '../assets/file.svg'
 import bookOpenIcon from '../assets/book-open.svg'
 import profileIcon from '../assets/user.svg'
@@ -10,7 +10,7 @@ import type { DashboardCourse } from '../types/dasboard.types.ts'
 
 const tabs = [
   { icon: homeIcon, label: 'HOME' },
-  { icon: editIcon, label: 'CLASS' },
+  { icon: classIcon, label: 'CLASS' },
   { icon: fileIcon, label: 'PRACTICE' },
   { icon: bookOpenIcon, label: 'NOTEBOOK' },
   { icon: profileIcon, label: 'PROFILE' },

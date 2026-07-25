@@ -7,7 +7,7 @@ import type {
     SaveProgressRequest,
     SaveProgressData,
 } from '../types/section,types.ts'
-import { getAuthToken } from './session.ts'
+import { authenticatedFetch, getAuthToken } from './session.ts'
 
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL ?? ''
 
@@ -54,7 +54,7 @@ async function fetchSectionResponse<T>(
 ): Promise<T | null> {
     let res: Response
     try {
-        res = await fetch(input, init)
+        res = await authenticatedFetch(input, init)
     } catch (error) {
         if (error instanceof DOMException && error.name === 'AbortError') throw error
         throw new SectionApiError(fallbackMessage)

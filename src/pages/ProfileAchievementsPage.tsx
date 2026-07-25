@@ -1,10 +1,13 @@
+import { useEffect } from 'react'
 import './ProfileAchievementsPage.css'
 import { formatAchievementDate } from '../data/profile'
 import { useUserAchievements } from '../hooks/useUserAchievements'
 import type { UserAchievement } from '../types/user.types'
+import { isUnauthorizedError } from '../services/apiError'
 
 interface ProfileAchievementsPageProps {
   onBack: () => void
+  onUnauthorized: () => void
 }
 
 function AchievementItem({ achievement }: { achievement: UserAchievement }) {
@@ -21,9 +24,16 @@ function AchievementItem({ achievement }: { achievement: UserAchievement }) {
   )
 }
 
-function ProfileAchievementsPage({ onBack }: ProfileAchievementsPageProps) {
-  const { data: achievementsData, isError, isLoading, refetch } = useUserAchievements()
+function ProfileAchievementsPage({ onBack, onUnauthorized }: ProfileAchievementsPageProps) {
+  const { data: achievementsData, error, isError, isLoading, refetch } = useUserAchievements()
   const achievements = achievementsData?.badges ?? []
+  const isUnauthorized = isUnauthorizedError(error)
+
+  useEffect(() => {
+    if (isUnauthorized) onUnauthorized()
+  }, [isUnauthorized, onUnauthorized])
+
+  if (isUnauthorized) return null
 
   return (
     <main className="profile-achievements-screen">

@@ -20,6 +20,7 @@ import {
 import { useCheckSectionAnswer } from '../hooks/useCheckSectionAnswer.ts'
 import { useSaveSectionProgress } from '../hooks/useSaveSectionProgress.ts'
 import { useCreateScrap } from '../hooks/useCreateScrap.ts'
+import { useSectionPageTimer } from '../hooks/useSectionPageTimer.ts'
 
 export type PracticeStep =
   | 'choice'
@@ -56,7 +57,6 @@ interface PracticeStateSnapshot {
     reason: string
   }
   listeningAnswer: string
-  showListeningText: boolean
 }
 
 type NextGrammarNoteId = 'future-proposal' | 'polite-ending'
@@ -87,6 +87,17 @@ type ChoiceFeedback = {
   phase: 'flash' | 'settled'
 }
 
+const grammarPageByStep: Partial<Record<PracticeStep, number>> = {
+  choice: 0,
+  'fill-intro': 1,
+  fill: 2,
+  'make-intro': 3,
+  make: 4,
+  review: 5,
+  'next-grammar': 6,
+  'next-grammar-rules': 7,
+}
+
 function GrammarPracticePage({
   onBack,
   language,
@@ -106,8 +117,8 @@ function GrammarPracticePage({
   const grammarMaterial = useMemo(() => {
     return materialsData?.materials.find((m) => m.type === 'GRAMMAR_TABLE') ?? null
   }, [materialsData])
-
   const grammarMaterialId = grammarMaterial?.id ?? null
+  const grammarContent = grammarMaterial?.contentText ?? null
 
   const fallbackChoicePrompt = '준호씨가 커피를'
   const fallbackChoiceOptions = ['마시다', '먹다', '보다', '가다']
@@ -130,15 +141,12 @@ function GrammarPracticePage({
   const [makeSentenceAnswer, setMakeSentenceAnswer] = useState('')
   const [submittedMakeSentenceAnswer, setSubmittedMakeSentenceAnswer] = useState('')
   const [history, setHistory] = useState<PracticeStateSnapshot[]>([])
-  const [showGrammar, setShowGrammar] = useState(true)
+  const [showGrammar, setShowGrammar] = useState(false)
   const [showVocab, setShowVocab] = useState(false)
   const [readingQuestionIndex, setReadingQuestionIndex] = useState(0)
   const [readingAnswers, setReadingAnswers] = useState<Record<number, string>>({})
   const [readingBlankAnswers, setReadingBlankAnswers] = useState({ meeting: '', reason: '' })
   const [listeningAnswer, setListeningAnswer] = useState('')
-  const [showListeningText, setShowListeningText] = useState(false)
-  const [listeningProgress, setListeningProgress] = useState(98 / 174)
-  const [isListeningScrubbing, setIsListeningScrubbing] = useState(false)
   const [visibleExampleTranslations, setVisibleExampleTranslations] = useState<Record<string, boolean>>({})
   const [activeNextGrammarDialog, setActiveNextGrammarDialog] = useState<NextGrammarDialogState | null>(null)
   const [readingDragOffset, setReadingDragOffset] = useState(0)
@@ -148,10 +156,22 @@ function GrammarPracticePage({
   const [reviewMarkComplete, setReviewMarkComplete] = useState<boolean | null>(null)
   const [reviewSaveScrap, setReviewSaveScrap] = useState<boolean | null>(null)
 
+  const trackedPageNumber =
+    practiceStep === 'reading'
+      ? readingQuestionIndex
+      : practiceStep === 'listening'
+        ? 0
+        : grammarPageByStep[practiceStep] ?? -1
+
+  useSectionPageTimer({
+    sectionId,
+    pageNumber: trackedPageNumber,
+    enabled: trackedPageNumber >= 0,
+  })
+
   const readingDragStartXRef = useRef<number | null>(null)
   const readingDragOffsetRef = useRef(0)
   const readingDidDragRef = useRef(false)
-  const listeningProgressRef = useRef<HTMLDivElement | null>(null)
   const nextGrammarLessonRef = useRef<HTMLElement | null>(null)
 
   const isFillStep = practiceStep === 'fill'
@@ -235,13 +255,32 @@ function GrammarPracticePage({
   const readingTrackTranslate =
     readingTrackOffset - readingQuestionIndex * readingTrackStride + readingDragOffset
   const isListeningComplete = listeningAnswer.length > 0
-  const listeningTotalSeconds = 174
-  const listeningElapsedSeconds = Math.round(listeningTotalSeconds * listeningProgress)
-  const listeningRemainingSeconds = Math.max(listeningTotalSeconds - listeningElapsedSeconds, 0)
-  const isListeningTranscriptReady = listeningProgress >= 0.995
   const progressDotPositions = [3, 21.8, 40.6, 59.4, 78.2, 97]
   const contentLanguage = toContentLanguage(language)
   const isTranslationRtl = isRtlContentLanguage(contentLanguage)
+  // 서버 설명이 있으면 mother language에 맞는 것을 쓰고, 없으면 언어별 기본 문구로 폴백한다.
+  const grammarExplanation = pickExplanation(grammarContent?.explanations, contentLanguage)
+  const fallbackGrammarExplanationLines =
+    contentLanguage === 'he'
+      ? [
+          'הזמנה לפעולה.',
+          '"שנעשה (משהו)?"',
+          'זו צורת דיבור בלבד בפנייה לאדם כלשהו, עם',
+          'כוונה להציע לעשות משהו יחד.',
+        ]
+      : [
+          'A suggestion to do something.',
+          '"Shall we (do something)?"',
+          'This spoken form is used when you address someone',
+          'to suggest doing something together.',
+        ]
+  const grammarExplanationLines = grammarExplanation?.text
+    ?.split('\n')
+    .map((line) => line.trim())
+    .filter((line) => line.length > 0) ?? fallbackGrammarExplanationLines
+  const grammarExplanationDir = grammarExplanation
+    ? contentTextDirection(toContentLanguage(grammarExplanation.lang))
+    : contentTextDirection(contentLanguage)
   const nextGrammarExamples: NextGrammarExampleMessage[] = [
     {
       id: 'proposal',
@@ -274,31 +313,6 @@ function GrammarPracticePage({
       ],
     },
   ]
-  // 서버 설명이 있으면 mother language에 맞는 것을 쓰고, 없으면 언어별 기본 문구로 폴백한다.
-  const grammarExplanation = pickExplanation(
-    grammarMaterial?.contentText?.explanations,
-    contentLanguage,
-  )
-  const fallbackGrammarDescriptionLines =
-    contentLanguage === 'he'
-      ? [
-          'הזמנה לפעולה.',
-          '"שנעשה (משהו)?"',
-          'זו צורת דיבור בלבד בפנייה לאדם כלשהו, עם',
-          'כוונה להציע לעשות משהו יחד.',
-        ]
-      : [
-          'A suggestion to do something.',
-          '"Shall we (do something)?"',
-          'This spoken form is used when you address someone',
-          'to suggest doing something together.',
-        ]
-  const grammarDescriptionLines = grammarExplanation
-    ? [grammarExplanation.text]
-    : fallbackGrammarDescriptionLines
-  const grammarDescriptionDir = grammarExplanation
-    ? contentTextDirection(toContentLanguage(grammarExplanation.lang))
-    : contentTextDirection(contentLanguage)
   const nextGrammarGridItems = ['', 'V -ㄹ까요?', '가다', '갈까요?', '', 'V-을까요?', '먹다', '먹을까요?']
   const nextGrammarNotes: Record<NextGrammarNoteId, { title: string; description: string }> = {
     'future-proposal': {
@@ -319,17 +333,6 @@ function GrammarPracticePage({
     eat: { title: '먹다', description: 'to eat' },
   }
 
-  const formatListeningTime = (seconds: number) => {
-    const minutes = Math.floor(seconds / 60)
-    const remainder = seconds % 60
-    return `${String(minutes).padStart(2, '0')}:${String(remainder).padStart(2, '0')}`
-  }
-  const updateListeningProgress = (clientX: number) => {
-    const rect = listeningProgressRef.current?.getBoundingClientRect()
-    if (!rect) return
-    const nextProgress = Math.min(1, Math.max(0, (clientX - rect.left) / rect.width))
-    setListeningProgress(nextProgress)
-  }
   const toggleShowGrammar = () => {
     if (showGrammar) {
       setShowGrammar(false)
@@ -448,7 +451,6 @@ function GrammarPracticePage({
     readingAnswers,
     readingBlankAnswers,
     listeningAnswer,
-    showListeningText,
   }
   const applySnapshot = (snapshot: PracticeStateSnapshot) => {
     setPracticeStep(snapshot.practiceStep)
@@ -463,7 +465,6 @@ function GrammarPracticePage({
     setReadingAnswers(snapshot.readingAnswers)
     setReadingBlankAnswers(snapshot.readingBlankAnswers)
     setListeningAnswer(snapshot.listeningAnswer)
-    setShowListeningText(snapshot.showListeningText)
   }
   const pushHistory = () => {
     setHistory((prev) => [
@@ -535,18 +536,22 @@ function GrammarPracticePage({
   }, [choiceFeedback])
 
   const handleReviewSubmit = async (nextStep: 'next-grammar' | 'reading') => {
+    if (reviewMarkComplete === null) return
+
     if (sectionId !== null) {
-      await saveProgress
-        .mutateAsync({
+      try {
+        await saveProgress.mutateAsync({
           sectionId,
           payload: {
             currentPage: 1,
             stayTimeSeconds: 0,
             forceComplete: reviewMarkComplete === true,
-            difficulty: reviewDifficulty ?? 'NORMAL',
+            difficulty: reviewMarkComplete === true ? reviewDifficulty : undefined,
           },
         })
-        .catch(() => {})
+      } catch {
+        return
+      }
 
       if (reviewSaveScrap === true && grammarMaterialId !== null) {
         await createScrap
@@ -821,7 +826,11 @@ function GrammarPracticePage({
               <button
                 type="button"
                 className="grammar-practice-review-action-button grammar-practice-review-action-button-primary"
-                disabled={saveProgress.isPending || createScrap.isPending}
+                disabled={
+                  reviewMarkComplete === null ||
+                  saveProgress.isPending ||
+                  createScrap.isPending
+                }
                 onClick={() => void handleReviewSubmit('next-grammar')}
               >
                 {saveProgress.isPending || createScrap.isPending ? 'SAVING...' : 'CONTINUE'}
@@ -861,8 +870,8 @@ function GrammarPracticePage({
 
             <section className="grammar-practice-next-grammar-section" ref={nextGrammarLessonRef}>
               <h2 className="grammar-practice-next-grammar-heading">Grammar explanation</h2>
-              <div className="grammar-practice-next-grammar-description" dir={grammarDescriptionDir}>
-                {grammarDescriptionLines.map((line, index) => (
+              <div className="grammar-practice-next-grammar-description" dir={grammarExplanationDir}>
+                {grammarExplanationLines.map((line, index) => (
                   <p key={`${index}-${line}`} className="grammar-practice-next-grammar-description-line">
                     {line}
                   </p>
@@ -1069,11 +1078,7 @@ function GrammarPracticePage({
             </div>
           </section>
         ) : isListeningStep ? (
-          <section
-            className={`grammar-practice-listening-screen ${
-              showListeningText ? 'grammar-practice-listening-screen-script-visible' : ''
-            }`}
-          >
+          <section className="grammar-practice-listening-screen grammar-practice-listening-screen-script-visible">
             <div className="grammar-practice-listening-toggle-row">
               <div className="grammar-practice-listening-toggle-group">
                 <span className="grammar-practice-listening-toggle-label">Mark Grammar</span>
@@ -1100,84 +1105,36 @@ function GrammarPracticePage({
                 </button>
               </div>
             </div>
-            <div className="grammar-practice-listening-player">
-              <button type="button" className="grammar-practice-listening-play" aria-label="재생">
-                <svg width="16" height="18" viewBox="0 0 12 14" fill="none" aria-hidden="true">
-                  <path d="M2 1.6L10 7L2 12.4V1.6Z" fill="currentColor" />
-                </svg>
-              </button>
-              <span className="grammar-practice-listening-time">{formatListeningTime(listeningElapsedSeconds)}</span>
-              <div
-                ref={listeningProgressRef}
-                className={`grammar-practice-listening-progress ${isListeningScrubbing ? 'is-scrubbing' : ''}`}
-                role="slider"
-                aria-label="audio progress"
-                aria-valuemin={0}
-                aria-valuemax={100}
-                aria-valuenow={Math.round(listeningProgress * 100)}
-                onPointerDown={(event) => {
-                  setIsListeningScrubbing(true)
-                  updateListeningProgress(event.clientX)
-                  event.currentTarget.setPointerCapture(event.pointerId)
-                }}
-                onPointerMove={(event) => {
-                  if (!isListeningScrubbing) return
-                  updateListeningProgress(event.clientX)
-                }}
-                onPointerUp={(event) => {
-                  updateListeningProgress(event.clientX)
-                  setIsListeningScrubbing(false)
-                  if (event.currentTarget.hasPointerCapture(event.pointerId)) {
-                    event.currentTarget.releasePointerCapture(event.pointerId)
-                  }
-                }}
-                onPointerCancel={(event) => {
-                  setIsListeningScrubbing(false)
-                  if (event.currentTarget.hasPointerCapture(event.pointerId)) {
-                    event.currentTarget.releasePointerCapture(event.pointerId)
-                  }
-                }}
-              >
-                <span
-                  className="grammar-practice-listening-progress-fill"
-                  style={{ width: `${Math.max(listeningProgress * 100, 2)}%` }}
+            <div className="grammar-practice-listening-audio-icon" aria-hidden="true">
+              <svg width="28" height="28" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                <path
+                  d="M4 9.5H7.5L12 5.5V18.5L7.5 14.5H4V9.5Z"
+                  fill="currentColor"
                 />
-              </div>
-              <span className="grammar-practice-listening-time">{formatListeningTime(listeningRemainingSeconds)}</span>
+                <path
+                  d="M15.5 8.5C16.5 9.5 17 10.7 17 12C17 13.3 16.5 14.5 15.5 15.5"
+                  stroke="currentColor"
+                  strokeWidth="1.5"
+                  strokeLinecap="round"
+                />
+                <path
+                  d="M18 6C19.6 7.6 20.5 9.7 20.5 12C20.5 14.3 19.6 16.4 18 18"
+                  stroke="currentColor"
+                  strokeWidth="1.5"
+                  strokeLinecap="round"
+                />
+              </svg>
             </div>
-            <div className="grammar-practice-listening-show-text-wrap">
-              {showListeningText ? (
-                <section className="grammar-practice-listening-script-card">
-                  <p className="grammar-practice-listening-script-line"><span className="grammar-practice-listening-script-speaker">남자</span> 토요일 몇 시에 만날까요?</p>
-                  <p className="grammar-practice-listening-script-line"><span className="grammar-practice-listening-script-speaker">여자</span> 2시나 3시에 만나요.</p>
-                  <p className="grammar-practice-listening-script-line"><span className="grammar-practice-listening-script-speaker">남자</span> 그럼 2시에 만나요.</p>
-                  <p className="grammar-practice-listening-script-line grammar-practice-listening-script-line-indented">그런데 어디에서 만날까요?</p>
-                  <p className="grammar-practice-listening-script-line"><span className="grammar-practice-listening-script-speaker">여자</span> 백화점 앞에서 만날까요?</p>
-                  <p className="grammar-practice-listening-script-line"><span className="grammar-practice-listening-script-speaker">남자</span> 백화점 앞에는 사람이 많아요.</p>
-                  <p className="grammar-practice-listening-script-line grammar-practice-listening-script-line-indented">2시에 서점 앞에서 만나요.</p>
-                  <p className="grammar-practice-listening-script-line"><span className="grammar-practice-listening-script-speaker">여자</span> 네, 알았어요.</p>
-                </section>
-              ) : (
-                <button
-                  type="button"
-                  className={`grammar-practice-listening-show-text-button ${isListeningTranscriptReady ? 'grammar-practice-listening-show-text-button-active' : ''}`}
-                  aria-hidden={!isListeningTranscriptReady}
-                  tabIndex={isListeningTranscriptReady ? 0 : -1}
-                  onClick={() => {
-                    if (!isListeningTranscriptReady) return
-                    setShowListeningText(true)
-                  }}
-                >
-                  <svg className="grammar-practice-listening-show-text-icon" width="24" height="24" viewBox="0 0 24 24" fill="none" aria-hidden="true">
-                    <path d="M7 4.5H17C18.1 4.5 19 5.4 19 6.5V17.5C19 18.6 18.1 19.5 17 19.5H7C5.9 19.5 5 18.6 5 17.5V6.5C5 5.4 5.9 4.5 7 4.5Z" stroke="currentColor" strokeWidth="1.5" />
-                    <path d="M8 9H16" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
-                    <path d="M8 12H16" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
-                    <path d="M8 15H13" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
-                  </svg>
-                  <span>Show text</span>
-                </button>
-              )}
-            </div>
+            <section className="grammar-practice-listening-script-card">
+              <p className="grammar-practice-listening-script-line"><span className="grammar-practice-listening-script-speaker">남자</span> 토요일 몇 시에 만날까요?</p>
+              <p className="grammar-practice-listening-script-line"><span className="grammar-practice-listening-script-speaker">여자</span> 2시나 3시에 만나요.</p>
+              <p className="grammar-practice-listening-script-line"><span className="grammar-practice-listening-script-speaker">남자</span> 그럼 2시에 만나요.</p>
+              <p className="grammar-practice-listening-script-line grammar-practice-listening-script-line-indented">그런데 어디에서 만날까요?</p>
+              <p className="grammar-practice-listening-script-line"><span className="grammar-practice-listening-script-speaker">여자</span> 백화점 앞에서 만날까요?</p>
+              <p className="grammar-practice-listening-script-line"><span className="grammar-practice-listening-script-speaker">남자</span> 백화점 앞에는 사람이 많아요.</p>
+              <p className="grammar-practice-listening-script-line grammar-practice-listening-script-line-indented">2시에 서점 앞에서 만나요.</p>
+              <p className="grammar-practice-listening-script-line"><span className="grammar-practice-listening-script-speaker">여자</span> 네, 알았어요.</p>
+            </section>
             <div className="grammar-practice-listening-question-viewport">
               <div className="grammar-practice-listening-question-track">
                 <section className="grammar-practice-listening-question-card">
@@ -1445,7 +1402,6 @@ function GrammarPracticePage({
                 if (!isReadingComplete) return
                 pushHistory()
                 setListeningAnswer('')
-                setShowListeningText(false)
                 setPracticeStep('listening')
               }}
             >
