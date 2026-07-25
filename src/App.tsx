@@ -410,7 +410,8 @@ function App() {
     const nextName = userMeData.profile.nickname?.trim() || getOnboardingUsername()
     const nextPhoneNumber = userMeData.profile.phoneNumber ?? ''
     const nextAgeRange = userMeData.profile.birthday ?? userMeData.profile.ageGroup ?? ''
-    const nextLanguage = userMeData.profile.motherLanguage ?? ''
+    // 서버에 mother language가 아직 없으면 온보딩에서 고른 값을 덮어쓰지 않는다.
+    const nextLanguage = userMeData.profile.motherLanguage ?? getStoredLanguage()
     const nextKoreanLevel = userMeData.profile.proficiencyLevel ?? ''
     const nextDailyGoal = userMeData.profile.dailyGoalMin?.toString() ?? ''
     const nextKoreanGoal = userMeData.profile.learningGoal ?? ''
@@ -552,6 +553,16 @@ function App() {
             const savedKoreanLevel = values.koreanLevel ?? ''
             const savedDailyGoal = values.dailyStudyTime ?? ''
             const savedKoreanGoal = values.goal ?? ''
+
+            // 온보딩 선택값을 서버에도 저장해야 이후 /user/me 동기화에서 지워지지 않는다.
+            if (authSession && savedLanguage) {
+              updateUserMe
+                .mutateAsync({ motherLanguage: savedLanguage })
+                .catch(() => {
+                  // 저장에 실패해도 로컬 값으로 학습 화면은 계속 진행한다.
+                })
+            }
+
             setUserName(savedName)
             setAgeRange(savedAgeRange)
             setLanguage(savedLanguage)
@@ -756,12 +767,14 @@ function App() {
         />
       ) : screen === 'vocabulary' ? (
         <VocabularyPage
+          language={language}
           onBack={() => {
             setScreen('notebook')
           }}
         />
       ) : screen === 'vocabulary-lesson' ? (
         <VocabularyLessonPage
+          language={language}
           sectionId={selectedSectionId}
           initialView={getInitialVocabularyLessonView()}
           initialCardIndex={getInitialVocabularyCardIndex()}
@@ -781,6 +794,7 @@ function App() {
         />
       ) : screen === 'notebook-grammar' ? (
         <GrammarNotebookPage
+          language={language}
           onBack={() => {
             setScreen('notebook')
           }}

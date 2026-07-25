@@ -11,6 +11,12 @@ import reviewHardImage from '../assets/11.png'
 import vectorIcon from '../assets/Vector1.png'
 import { useSectionQuestions } from '../hooks/useSectionQuestioins.ts'
 import { useSectionMaterials } from '../hooks/useSectionMaterials.ts'
+import {
+  contentTextDirection,
+  isRtlContentLanguage,
+  pickExplanation,
+  toContentLanguage,
+} from '../data/contentLanguage.ts'
 import { useCheckSectionAnswer } from '../hooks/useCheckSectionAnswer.ts'
 import { useSaveSectionProgress } from '../hooks/useSaveSectionProgress.ts'
 import { useCreateScrap } from '../hooks/useCreateScrap.ts'
@@ -97,9 +103,11 @@ function GrammarPracticePage({
     return questionsData?.questions.find((q) => q.type === 'MCQ') ?? null
   }, [questionsData])
 
-  const grammarMaterialId = useMemo(() => {
-    return materialsData?.materials.find((m) => m.type === 'GRAMMAR_TABLE')?.id ?? null
+  const grammarMaterial = useMemo(() => {
+    return materialsData?.materials.find((m) => m.type === 'GRAMMAR_TABLE') ?? null
   }, [materialsData])
+
+  const grammarMaterialId = grammarMaterial?.id ?? null
 
   const fallbackChoicePrompt = '준호씨가 커피를'
   const fallbackChoiceOptions = ['마시다', '먹다', '보다', '가다']
@@ -232,14 +240,14 @@ function GrammarPracticePage({
   const listeningRemainingSeconds = Math.max(listeningTotalSeconds - listeningElapsedSeconds, 0)
   const isListeningTranscriptReady = listeningProgress >= 0.995
   const progressDotPositions = [3, 21.8, 40.6, 59.4, 78.2, 97]
-  const normalizedLanguage = language.trim().toLowerCase()
-  const isTranslationRtl = normalizedLanguage === 'hebrew'
+  const contentLanguage = toContentLanguage(language)
+  const isTranslationRtl = isRtlContentLanguage(contentLanguage)
   const nextGrammarExamples: NextGrammarExampleMessage[] = [
     {
       id: 'proposal',
       side: 'left',
       translation:
-        normalizedLanguage === 'hebrew'
+        contentLanguage === 'he'
           ? 'האם נאכל יחד צהריים?'
           : 'Shall we eat lunch together?',
       tokens: [
@@ -254,7 +262,7 @@ function GrammarPracticePage({
       id: 'reply',
       side: 'right',
       translation:
-        normalizedLanguage === 'hebrew'
+        contentLanguage === 'he'
           ? 'כן, בוא/י נאכל יחד.'
           : 'Yes, let’s eat together.',
       tokens: [
@@ -266,6 +274,31 @@ function GrammarPracticePage({
       ],
     },
   ]
+  // 서버 설명이 있으면 mother language에 맞는 것을 쓰고, 없으면 언어별 기본 문구로 폴백한다.
+  const grammarExplanation = pickExplanation(
+    grammarMaterial?.contentText?.explanations,
+    contentLanguage,
+  )
+  const fallbackGrammarDescriptionLines =
+    contentLanguage === 'he'
+      ? [
+          'הזמנה לפעולה.',
+          '"שנעשה (משהו)?"',
+          'זו צורת דיבור בלבד בפנייה לאדם כלשהו, עם',
+          'כוונה להציע לעשות משהו יחד.',
+        ]
+      : [
+          'A suggestion to do something.',
+          '"Shall we (do something)?"',
+          'This spoken form is used when you address someone',
+          'to suggest doing something together.',
+        ]
+  const grammarDescriptionLines = grammarExplanation
+    ? [grammarExplanation.text]
+    : fallbackGrammarDescriptionLines
+  const grammarDescriptionDir = grammarExplanation
+    ? contentTextDirection(toContentLanguage(grammarExplanation.lang))
+    : contentTextDirection(contentLanguage)
   const nextGrammarGridItems = ['', 'V -ㄹ까요?', '가다', '갈까요?', '', 'V-을까요?', '먹다', '먹을까요?']
   const nextGrammarNotes: Record<NextGrammarNoteId, { title: string; description: string }> = {
     'future-proposal': {
@@ -828,11 +861,12 @@ function GrammarPracticePage({
 
             <section className="grammar-practice-next-grammar-section" ref={nextGrammarLessonRef}>
               <h2 className="grammar-practice-next-grammar-heading">Grammar explanation</h2>
-              <div className="grammar-practice-next-grammar-description" dir="rtl">
-                <p className="grammar-practice-next-grammar-description-line">הזמנה לפעולה.</p>
-                <p className="grammar-practice-next-grammar-description-line">"שנעשה (משהו)?"</p>
-                <p className="grammar-practice-next-grammar-description-line">זו צורת דיבור בלבד בפנייה לאדם כלשהו, עם</p>
-                <p className="grammar-practice-next-grammar-description-line">כוונה להציע לעשות משהו יחד.</p>
+              <div className="grammar-practice-next-grammar-description" dir={grammarDescriptionDir}>
+                {grammarDescriptionLines.map((line, index) => (
+                  <p key={`${index}-${line}`} className="grammar-practice-next-grammar-description-line">
+                    {line}
+                  </p>
+                ))}
               </div>
               <div className="grammar-practice-next-grammar-grid" aria-hidden="true">
                 {nextGrammarGridItems.map((item, index) => (

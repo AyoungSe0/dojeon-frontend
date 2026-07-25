@@ -3,6 +3,7 @@ import './OnboardingPage.css'
 import onboardingCharacter from '../assets/9.png'
 import onboardingCompleteCharacter from '../assets/6.png'
 import { AGE_RANGE_OPTIONS, isValidAgeRange } from '../data/ageRanges'
+import { MOTHER_LANGUAGE_OPTIONS, isValidMotherLanguage } from '../data/contentLanguage'
 
 interface OnboardingStep {
   id: string
@@ -43,11 +44,8 @@ const onboardingSteps: OnboardingStep[] = [
     choiceStyle: 'default',
     progressStyle: 'default',
     progressStep: 2,
-    choices: [
-      { id: 'Hebrew', label: 'Hebrew' },
-      { id: 'English', label: 'English' },
-    ],
-    validator: (value) => value === 'Hebrew' || value === 'English',
+    choices: MOTHER_LANGUAGE_OPTIONS,
+    validator: (value) => isValidMotherLanguage(value),
   },
   {
     id: 'koreanLevel',

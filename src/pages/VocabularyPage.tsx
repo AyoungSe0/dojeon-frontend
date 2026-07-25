@@ -2,16 +2,23 @@ import { useState } from 'react'
 import './VocabularyPage.css'
 import { useVocabScraps } from '../hooks/useVocabScraps.ts'
 import type { VocabScrapGroup, VocabScrapItem } from '../types/scraps.types.ts'
+import {
+  contentTextDirection,
+  pickLocaleText,
+  toContentLanguage,
+  type ContentLanguage,
+} from '../data/contentLanguage.ts'
 
 interface VocabularyPageProps {
+  language: string
   onBack: () => void
 }
 
-const getTranslation = (item: VocabScrapItem) =>
-  item.card?.locales?.en?.back ?? item.card?.wordBack ?? ''
+const getTranslation = (item: VocabScrapItem, language: ContentLanguage) =>
+  pickLocaleText(item.card?.locales, language, 'back') ?? item.card?.wordBack ?? ''
 
-const getNotes = (item: VocabScrapItem) =>
-  item.card?.locales?.en?.notes ?? item.card?.notes ?? 'No notes yet.'
+const getNotes = (item: VocabScrapItem, language: ContentLanguage) =>
+  pickLocaleText(item.card?.locales, language, 'notes') ?? item.card?.notes ?? 'No notes yet.'
 
 const getExample = (item: VocabScrapItem) => {
   const word = item.card?.wordFront ?? ''
@@ -145,7 +152,9 @@ const previewVocabGroups: VocabScrapGroup[] = [
   },
 ]
 
-function VocabularyPage({ onBack }: VocabularyPageProps) {
+function VocabularyPage({ language, onBack }: VocabularyPageProps) {
+  const contentLanguage = toContentLanguage(language)
+  const translationDir = contentTextDirection(contentLanguage)
   const [isRecentSort, setIsRecentSort] = useState(true)
   const [selectedGroup, setSelectedGroup] = useState<VocabScrapGroup | null>(null)
   const [expandedScrapId, setExpandedScrapId] = useState<string | null>(null)
@@ -269,11 +278,15 @@ function VocabularyPage({ onBack }: VocabularyPageProps) {
           <WordDetail
             item={selectedWord}
             index={selectedWordDisplayIndex}
+            contentLanguage={contentLanguage}
+            translationDir={translationDir}
             onRemove={() => removeFlashcardItem(selectedWord.scrapId)}
           />
         ) : selectedGroup ? (
           <WordList
             group={selectedGroup}
+            contentLanguage={contentLanguage}
+            translationDir={translationDir}
             expandedScrapId={expandedScrapId}
             flashcardScrapIds={flashcardScrapIds}
             onToggle={(scrapId) => {
@@ -349,6 +362,8 @@ function CourseList({
 
 function WordList({
   group,
+  contentLanguage,
+  translationDir,
   expandedScrapId,
   flashcardScrapIds,
   onToggle,
@@ -357,6 +372,8 @@ function WordList({
   onOpenFlashcardPractice,
 }: {
   group: VocabScrapGroup
+  contentLanguage: ContentLanguage
+  translationDir: 'rtl' | 'ltr'
   expandedScrapId: string | null
   flashcardScrapIds: Set<string>
   onToggle: (scrapId: string) => void
@@ -415,7 +432,7 @@ function WordList({
                     </svg>
                   </button>
                   <span>{item.card?.wordFront ?? ''}</span>
-                  <span>{getTranslation(item)}</span>
+                  <span dir={translationDir}>{getTranslation(item, contentLanguage)}</span>
                   <button
                     type="button"
                     className="vocabulary-row-chevron"
@@ -438,7 +455,7 @@ function WordList({
                   <div className="vocabulary-notes-panel">
                     <div className="vocabulary-note-line">
                       <span className="vocabulary-note-tag">Notes</span>
-                      <span>{getNotes(item)}</span>
+                      <span dir={translationDir}>{getNotes(item, contentLanguage)}</span>
                     </div>
                     <div className="vocabulary-example-line">
                       <span>{getExample(item)}</span>
@@ -476,15 +493,19 @@ function WordList({
 function WordDetail({
   item,
   index,
+  contentLanguage,
+  translationDir,
   onRemove,
 }: {
   item: VocabScrapItem
   index: number
+  contentLanguage: ContentLanguage
+  translationDir: 'rtl' | 'ltr'
   onRemove: () => void
 }) {
   const word = item.card?.wordFront ?? ''
-  const translation = getTranslation(item)
-  const notes = getNotes(item)
+  const translation = getTranslation(item, contentLanguage)
+  const notes = getNotes(item, contentLanguage)
   const example = getExample(item)
 
   return (
@@ -508,7 +529,9 @@ function WordDetail({
             </svg>
           </button>
         </div>
-        <p className="vocabulary-detail-translation">{index}. {translation}</p>
+        <p className="vocabulary-detail-translation" dir={translationDir}>
+          {index}. {translation}
+        </p>
         <div className="vocabulary-detail-pronunciation">
           <span>Pronunciation</span>
           <button type="button" className="vocabulary-audio-button" aria-label="Play pronunciation">
@@ -518,10 +541,12 @@ function WordDetail({
       </article>
 
       <article className="vocabulary-detail-notes">
-        <p className="vocabulary-detail-numbered">{index}. {translation}</p>
+        <p className="vocabulary-detail-numbered" dir={translationDir}>
+          {index}. {translation}
+        </p>
         <div className="vocabulary-note-line">
           <span className="vocabulary-note-tag">Notes</span>
-          <span>{notes}</span>
+          <span dir={translationDir}>{notes}</span>
         </div>
         <div className="vocabulary-example-stack">
           <div className="vocabulary-example-line">
