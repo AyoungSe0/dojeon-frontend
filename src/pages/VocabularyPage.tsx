@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import './VocabularyPage.css'
 import { useVocabScraps } from '../hooks/useVocabScraps.ts'
 import type { VocabScrapGroup, VocabScrapItem } from '../types/scraps.types.ts'
@@ -13,6 +13,9 @@ interface VocabularyPageProps {
   language: string
   onBack: () => void
 }
+
+// 대시보드 preview(백엔드에서 5개로 잘라 보냄)와 개수를 맞춰 notebook → see more 이동 시 목록이 줄어 보이지 않게 한다.
+const COURSE_PREVIEW_WORD_COUNT = 5
 
 const getWordFront = (item: VocabScrapItem) => item.card?.wordFront ?? 'Unknown word'
 
@@ -160,12 +163,21 @@ function VocabularyPage({ language, onBack }: VocabularyPageProps) {
   const contentLanguage = toContentLanguage(language)
   const translationDir = contentTextDirection(contentLanguage)
   const [isRecentSort, setIsRecentSort] = useState(true)
-  const [selectedGroup, setSelectedGroup] = useState<VocabScrapGroup | null>(null)
+  const [selectedCourseId, setSelectedCourseId] = useState<number | null>(null)
   const [expandedScrapId, setExpandedScrapId] = useState<string | null>(null)
   const [selectedWord, setSelectedWord] = useState<VocabScrapItem | null>(null)
   const [flashcardScrapIds, setFlashcardScrapIds] = useState<Set<string>>(() => new Set())
-  const { groups, loading, error, refetch } = useVocabScraps()
+  const { groups, loading, loadingMore, hasMore, error, fetchNextPage, refetch } = useVocabScraps()
   const visibleGroups = import.meta.env.DEV && groups.length === 0 ? previewVocabGroups : groups
+  // 코스별 그룹은 모든 페이지가 도착해야 완성되므로 남은 페이지를 이어서 받아온다.
+  useEffect(() => {
+    if (!hasMore || loadingMore) return
+    fetchNextPage()
+  }, [hasMore, loadingMore, fetchNextPage])
+
+  // 그룹 객체를 저장하지 않고 courseId로 다시 찾는다. 뒤이어 도착한 페이지의 단어까지 반영되도록.
+  const selectedGroup =
+    visibleGroups.find((group) => group.courseId === selectedCourseId) ?? null
   const selectedFlashcardItems = selectedGroup
     ? selectedGroup.items.filter((item) => flashcardScrapIds.has(item.scrapId))
     : []
@@ -210,7 +222,7 @@ function VocabularyPage({ language, onBack }: VocabularyPageProps) {
     }
 
     if (selectedGroup) {
-      setSelectedGroup(null)
+      setSelectedCourseId(null)
       setExpandedScrapId(null)
       return
     }
@@ -322,7 +334,13 @@ function VocabularyPage({ language, onBack }: VocabularyPageProps) {
             ) : null}
           </div>
         ) : (
-          <CourseList groups={visibleGroups} onOpenGroup={setSelectedGroup} />
+          <>
+            <CourseList
+              groups={visibleGroups}
+              onOpenGroup={(group) => setSelectedCourseId(group.courseId)}
+            />
+            {loadingMore ? <p className="vocabulary-loading">Loading more...</p> : null}
+          </>
         )}
       </section>
     </main>
@@ -345,7 +363,7 @@ function CourseList({
             <span className="vocabulary-lesson-tag">{getLessonTag(group)}</span>
           </div>
           <div className="vocabulary-card-items">
-            {group.items.slice(0, 4).map((item, index) => (
+            {group.items.slice(0, COURSE_PREVIEW_WORD_COUNT).map((item, index) => (
               <p key={item.scrapId}>
                 {index + 1}. {getWordFront(item)}
               </p>

@@ -603,6 +603,63 @@
   line-height: 1.2;
 }
 
+/* 자료 연습 문항(contentText.practices)의 고정 질문 + 단계 내 문항 진행 표시 */
+.grammar-practice-practice-intro {
+  width: min(350px, 100%);
+  margin-top: 20px;
+  display: flex;
+  align-items: center;
+  gap: 14px;
+}
+
+.grammar-practice-practice-image {
+  flex: 0 0 auto;
+  width: 100px;
+  height: 72px;
+  border: 1px solid var(--dojeon-color-gray-300);
+  border-radius: 8px;
+  background: var(--dojeon-color-gray-200);
+}
+
+.grammar-practice-practice-intro-copy {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.grammar-practice-practice-question {
+  margin: 0;
+  color: var(--dojeon-color-gray-900);
+  font-size: 16px;
+  font-weight: 600;
+  line-height: 1.2;
+}
+
+.grammar-practice-practice-dots {
+  display: flex;
+  gap: 6px;
+}
+
+.grammar-practice-practice-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--dojeon-color-gray-300);
+}
+
+.grammar-practice-practice-dot-active {
+  background: var(--dojeon-color-gray-900);
+}
+
+.grammar-practice-content-fill .grammar-practice-practice-intro {
+  width: 100%;
+  margin-top: 16px;
+}
+
+.grammar-practice-content-fill .grammar-practice-practice-question {
+  font-size: 12px;
+}
+
 .grammar-practice-question-card {
   width: min(350px, 100%);
   height: 210px;
@@ -2540,6 +2597,37 @@
   width: 100%;
   grid-template-columns: minmax(96px, 0.7fr) minmax(0, 1.3fr);
   gap: 2px;
+}
+
+/* 서버 contentText.table 을 그대로 그리는 표. 열 수는 headers 개수에 따라 달라진다. */
+.grammar-practice-next-grammar-table {
+  margin-top: 16px;
+  width: 100%;
+  border-collapse: separate;
+  border-spacing: 2px;
+}
+
+.grammar-practice-next-grammar-table th,
+.grammar-practice-next-grammar-table td {
+  min-height: 30px;
+  padding: 7px 8px;
+  background: var(--dojeon-color-primary-50);
+  color: var(--dojeon-color-gray-900);
+  font-size: 14px;
+  font-weight: 500;
+  line-height: 1.3;
+  text-align: center;
+  vertical-align: middle;
+  word-break: keep-all;
+}
+
+.grammar-practice-next-grammar-table th {
+  background: var(--dojeon-color-primary-container);
+  font-weight: 600;
+}
+
+.grammar-practice-next-grammar-table-line {
+  display: block;
 }
 
 .grammar-practice-next-grammar-grid-box {
