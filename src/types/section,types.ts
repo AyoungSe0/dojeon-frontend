@@ -16,6 +16,26 @@ export interface Dialogue {
     lines: DialogueLine[];
 }
 
+// contentText.practices: 문제 풀이용 연습 블록.
+// kind 로 문항 형태가 갈리고(choose=보기 선택, fill=빈칸 입력, free=자유 작문),
+// 한 블록은 같은 fixedQuestion("이것은 뭐예요?") 아래 여러 items 를 묶어서 내려온다.
+export type MaterialPracticeKind = 'choose' | 'fill' | 'free';
+
+export interface MaterialPracticeItem {
+    prompt: string;
+    answers?: string[];
+    options?: string[];
+    sample?: string;
+}
+
+export interface MaterialPractice {
+    kind: string;
+    label?: string;
+    fixedQuestion?: string;
+    imagePlaceholder?: boolean;
+    items?: MaterialPracticeItem[];
+}
+
 // GET /section/{id}/material -> data: { materials: [...] }
 // material 식별자는 materialId 로 오고, contentText 는 자료 종류마다 채워지는 필드가 다르다.
 // (문법표는 description + table, 지문/대본은 dialogues 등)
@@ -28,6 +48,7 @@ export interface MaterialContentText {
     dialogues?: Dialogue[];
     audioUrl?: string | null;
     transcript?: string | null;
+    practices?: MaterialPractice[];
 }
 
 export interface SectionMaterial {
