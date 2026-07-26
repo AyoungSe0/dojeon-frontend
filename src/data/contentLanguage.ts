@@ -1,6 +1,7 @@
 import type {
   CardLocales,
   DialogueLine,
+  MaterialContentText,
   MaterialExplanation,
 } from '../types/section,types.ts'
 
@@ -67,6 +68,21 @@ export const pickExplanation = (
 
   // 번역 항목이 하나도 없으면(ko만 내려온 경우 등) 첫 항목이라도 보여준다.
   return explanations[0]
+}
+
+// 자료 설명은 explanations(언어별 배열) 또는 description(단일 문자열)로 온다.
+// mother language 설명이 있으면 그걸 쓰고, 없으면 description 이라도 보여준다.
+export const pickContentExplanation = (
+  content: MaterialContentText | null | undefined,
+  language: ContentLanguage,
+): { text: string; lang: string } | null => {
+  const explanation = pickExplanation(content?.explanations, language)
+  if (explanation?.text && explanation.text.trim().length > 0) return explanation
+
+  const description = content?.description
+  if (description && description.trim().length > 0) return { text: description, lang: 'ko' }
+
+  return null
 }
 
 export const pickLocaleText = (

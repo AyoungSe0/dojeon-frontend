@@ -262,7 +262,7 @@ function VocabularyLessonPage({
         payload: {
           currentPage: Math.max(1, vocabularyItems.length),
           stayTimeSeconds: 0,
-          forceComplete: true,
+          isCompleted: true,
         },
       })
       const nextGrammarSectionId =

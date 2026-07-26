@@ -253,7 +253,7 @@ function LessonDetailPage({
         payload: {
           currentPage: section.totalPages || 1,
           stayTimeSeconds: 0,
-          forceComplete: true,
+          isCompleted: true,
           difficulty: section.type === 'GRAMMAR' ? 'NORMAL' : undefined,
         },
       })
