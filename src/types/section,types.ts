@@ -26,6 +26,8 @@ export interface MaterialContentText {
     explanations?: MaterialExplanation[];
     imageUrl?: string;
     dialogues?: Dialogue[];
+    audioUrl?: string | null;
+    transcript?: string | null;
 }
 
 export interface SectionMaterial {
