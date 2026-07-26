@@ -20,9 +20,12 @@ interface SubscriptionPageProps {
 type SelectionMode = 'free' | 'trial' | 'pro'
 
 const benefitIcons = [graduationCapIcon, groupOutlineIcon, bookLineIcon, sparksIcon]
+const normalizePlanId = (planId: string) => planId.trim().toLowerCase()
 const isFreeTier = (tier: string) => tier.trim().toUpperCase() === 'FREE'
 const isTrialTier = (tier: string) => tier.trim().toUpperCase() === 'TRIAL'
-const isFreePlan = (plan: SubscriptionPlan) => plan.planId.trim().toLowerCase() === 'free'
+const isFreePlan = (plan: SubscriptionPlan) => normalizePlanId(plan.planId) === 'free'
+const hasSamePlanId = (left: string, right: string | null) =>
+  right !== null && normalizePlanId(left) === normalizePlanId(right)
 
 const formatDuration = (months: number) => {
   if (months === 1) return '1 month'
@@ -74,9 +77,11 @@ function SubscriptionPage({
   const backendFreePlan = plans.find(isFreePlan)
   const trialPlan = plans.find((plan) => plan.hasTrial)
   const paidPlans = plans.filter((plan) => !isFreePlan(plan) && !plan.hasTrial)
-  const defaultPaidPlan = paidPlans.find((plan) => plan.planId === currentSubscriptionPlanId)
+  const defaultPaidPlan = paidPlans.find((plan) =>
+    hasSamePlanId(plan.planId, currentSubscriptionPlanId),
+  )
     ?? paidPlans[0]
-  const selectedPlan = paidPlans.find((plan) => plan.planId === selectedPlanId)
+  const selectedPlan = paidPlans.find((plan) => hasSamePlanId(plan.planId, selectedPlanId))
     ?? defaultPaidPlan
   const trialEnded = isTrialTier(currentSubscriptionTier)
     && Boolean(subscriptionExpiresAt)
