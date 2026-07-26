@@ -457,6 +457,11 @@ function App() {
       return
     }
 
+    if (!authSession) {
+        setScreen('login')
+        return
+    }
+
     if (shouldWaitForUserMe) {
       return
     }
