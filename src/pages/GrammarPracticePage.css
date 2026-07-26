@@ -552,7 +552,7 @@
   position: relative;
   width: 100%;
   height: 20px;
-  margin-top: 6px; /* 카드 아래 진행점(10px + 6px)을 포함해 버튼까지 총 22px 간격 */
+  margin-top: 22px;
 }
 
 .grammar-practice-progress-track {
@@ -2224,7 +2224,7 @@
 
 .grammar-practice-listening-screen {
   width: calc(100% + 48px);
-  height: calc(100dvh - 149px);
+  height: calc(100dvh - 83px); /* header 64px + 화면 상단 간격 19px을 제외하고 실제 화면 하단까지 사용. */
   min-height: 0;
   margin-top: 19px;
   margin-left: -24px;
@@ -2328,7 +2328,7 @@
   width: 100%;
   min-height: 0;
   flex: 1;
-  padding-bottom: calc(env(safe-area-inset-bottom) + 36px);
+  padding-bottom: calc(env(safe-area-inset-bottom) + 110px); /* 하단 34px + Next 54px + 진행점 아래 간격 22px */
   box-sizing: border-box;
   display: flex;
   flex-direction: column;
