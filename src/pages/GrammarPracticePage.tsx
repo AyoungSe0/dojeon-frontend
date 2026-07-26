@@ -11,6 +11,18 @@ import reviewHardImage from '../assets/11.png'
 import vectorIcon from '../assets/Vector1.png'
 import { useSectionQuestions } from '../hooks/useSectionQuestioins.ts'
 import { useSectionMaterials } from '../hooks/useSectionMaterials.ts'
+import {
+  contentTextDirection,
+  isRtlContentLanguage,
+  pickDialogueTranslation,
+  pickExplanation,
+  toContentLanguage,
+} from '../data/contentLanguage.ts'
+import type {
+  DialogueLine,
+  SectionMaterial,
+  SectionQuestion,
+} from '../types/section,types.ts'
 import { useCheckSectionAnswer } from '../hooks/useCheckSectionAnswer.ts'
 import { useSaveSectionProgress } from '../hooks/useSaveSectionProgress.ts'
 import { useCreateScrap } from '../hooks/useCreateScrap.ts'
@@ -81,6 +93,43 @@ type ChoiceFeedback = {
   phase: 'flash' | 'settled'
 }
 
+// 서버 material/question 을 화면 모델로 바꾸는 헬퍼.
+// material.type 문자열이 섹션 종류마다 다르게 내려올 수 있어서 키워드로 느슨하게 찾고,
+// 못 찾으면 대화가 들어 있는 첫 material 로 폴백한다.
+function findMaterialByKeywords(
+  materials: SectionMaterial[],
+  keywords: string[],
+): SectionMaterial | null {
+  const byType = materials.find((material) =>
+    keywords.some((keyword) => (material.type ?? '').toUpperCase().includes(keyword)),
+  )
+  if (byType) return byType
+
+  return materials.find((material) => (material.contentText?.dialogues?.length ?? 0) > 0) ?? null
+}
+
+function toDialogueLines(material: SectionMaterial | null): DialogueLine[] {
+  return (material?.contentText?.dialogues ?? []).flatMap((dialogue) => dialogue.lines ?? [])
+}
+
+interface PracticeQuestionModel {
+  questionId: number
+  title: string
+  prompt: string
+  type: 'choice' | 'blank'
+  options: string[]
+}
+
+function toPracticeQuestions(questions: SectionQuestion[]): PracticeQuestionModel[] {
+  return questions.map((question, index) => ({
+    questionId: question.id,
+    title: `Question ${index + 1}`,
+    prompt: question.questionText,
+    type: (question.options?.length ?? 0) > 0 ? 'choice' : 'blank',
+    options: question.options ?? [],
+  }))
+}
+
 const grammarPageByStep: Partial<Record<PracticeStep, number>> = {
   choice: 0,
   'fill-intro': 1,
@@ -114,6 +163,24 @@ function GrammarPracticePage({
   const grammarMaterialId = grammarMaterial?.id ?? null
   const grammarContent = grammarMaterial?.contentText ?? null
 
+  const sectionMaterials = useMemo(() => materialsData?.materials ?? [], [materialsData])
+  const grammarDialogueLines = useMemo(
+    () => toDialogueLines(grammarMaterial),
+    [grammarMaterial],
+  )
+  const readingDialogueLines = useMemo(
+    () => toDialogueLines(findMaterialByKeywords(sectionMaterials, ['READING', 'TEXT'])),
+    [sectionMaterials],
+  )
+  const listeningDialogueLines = useMemo(
+    () => toDialogueLines(findMaterialByKeywords(sectionMaterials, ['LISTENING', 'SCRIPT', 'AUDIO'])),
+    [sectionMaterials],
+  )
+  const serverPracticeQuestions = useMemo(
+    () => toPracticeQuestions(questionsData?.questions ?? []),
+    [questionsData],
+  )
+
   const fallbackChoicePrompt = '준호씨가 커피를'
   const fallbackChoiceOptions = ['마시다', '먹다', '보다', '가다']
   const fallbackCorrectChoice = '마시다'
@@ -139,6 +206,7 @@ function GrammarPracticePage({
   const [showVocab, setShowVocab] = useState(false)
   const [readingQuestionIndex, setReadingQuestionIndex] = useState(0)
   const [readingAnswers, setReadingAnswers] = useState<Record<number, string>>({})
+  const [readingGradedAnswers, setReadingGradedAnswers] = useState<Record<number, boolean>>({})
   const [readingBlankAnswers, setReadingBlankAnswers] = useState({ meeting: '', reason: '' })
   const [listeningAnswer, setListeningAnswer] = useState('')
   const [visibleExampleTranslations, setVisibleExampleTranslations] = useState<Record<string, boolean>>({})
@@ -228,51 +296,78 @@ function GrammarPracticePage({
   const canMoveToNextPracticeStep =
     isAnswered && !checkAnswer.isPending && (!isChoiceStep || showChoiceFeedbackPanel)
 
-  const readingQuestions = [
+  // 서버 문항이 내려오면 그것을 쓰고, 없을 때만 기존 데모 문항으로 폴백한다.
+  const hasServerQuestions = serverPracticeQuestions.length > 0
+  const fallbackReadingQuestions: (PracticeQuestionModel & { correctAnswer?: string })[] = [
     {
+      questionId: -1,
       title: 'Question 1',
       prompt: '두 사람은 며칠에 만났어요?',
       type: 'choice',
       options: ['월요일', '수요일', '토요일', '일요일'],
       correctAnswer: '토요일',
     },
-    { title: 'Question 2', prompt: '마리 씨는 왜 오늘 영화를 못 봐요?', type: 'blank' },
+    { questionId: -2, title: 'Question 2', prompt: '마리 씨는 왜 오늘 영화를 못 봐요?', type: 'blank', options: [] },
   ]
-  const isReadingComplete =
-    Boolean(readingAnswers[0]) &&
-    readingBlankAnswers.meeting.trim().length > 0 &&
-    readingBlankAnswers.reason.trim().length > 0
+  const readingQuestions: (PracticeQuestionModel & { correctAnswer?: string })[] = hasServerQuestions
+    ? serverPracticeQuestions
+    : fallbackReadingQuestions
+  const isReadingComplete = hasServerQuestions
+    ? readingQuestions.every((_, index) => (readingAnswers[index] ?? '').trim().length > 0)
+    : Boolean(readingAnswers[0]) &&
+      readingBlankAnswers.meeting.trim().length > 0 &&
+      readingBlankAnswers.reason.trim().length > 0
   const readingCardWidth = 350
   const readingCardGap = 8
   const readingTrackOffset = 24
   const readingTrackStride = readingCardWidth + readingCardGap
   const readingTrackTranslate =
     readingTrackOffset - readingQuestionIndex * readingTrackStride + readingDragOffset
+  const fallbackListeningQuestions: PracticeQuestionModel[] = [
+    {
+      questionId: -11,
+      title: 'Question 1',
+      prompt: '두 사람은 몇시에 만나요?',
+      type: 'choice',
+      options: ['2:00', '2:30', '3:00', '3:30'],
+    },
+    { questionId: -12, title: 'Question 2', prompt: '', type: 'blank', options: [] },
+  ]
+  const listeningQuestions = hasServerQuestions ? serverPracticeQuestions : fallbackListeningQuestions
+  const activeListeningQuestion = listeningQuestions[0] ?? null
   const isListeningComplete = listeningAnswer.length > 0
   const progressDotPositions = [3, 21.8, 40.6, 59.4, 78.2, 97]
-  const normalizedLanguage = language.trim().toLowerCase()
-  const isTranslationRtl = normalizedLanguage === 'hebrew'
-  const explanationLangCode = isTranslationRtl ? 'he' : 'en'
-  const fallbackGrammarExplanationLines = [
-    'הזמנה לפעולה.',
-    '"שנעשה (משהו)?"',
-    'זו צורת דיבור בלבד בפנייה לאדם כלשהו, עם',
-    'כוונה להציע לעשות משהו יחד.',
-  ]
-  const grammarExplanationLines = (
-    grammarContent?.explanations.find((explanation) => explanation.lang === explanationLangCode)?.text ??
-    grammarContent?.explanations[0]?.text ??
-    null
-  )
+  const contentLanguage = toContentLanguage(language)
+  const isTranslationRtl = isRtlContentLanguage(contentLanguage)
+  // 서버 설명이 있으면 mother language에 맞는 것을 쓰고, 없으면 언어별 기본 문구로 폴백한다.
+  const grammarExplanation = pickExplanation(grammarContent?.explanations, contentLanguage)
+  const fallbackGrammarExplanationLines =
+    contentLanguage === 'he'
+      ? [
+          'הזמנה לפעולה.',
+          '"שנעשה (משהו)?"',
+          'זו צורת דיבור בלבד בפנייה לאדם כלשהו, עם',
+          'כוונה להציע לעשות משהו יחד.',
+        ]
+      : [
+          'A suggestion to do something.',
+          '"Shall we (do something)?"',
+          'This spoken form is used when you address someone',
+          'to suggest doing something together.',
+        ]
+  const grammarExplanationLines = grammarExplanation?.text
     ?.split('\n')
     .map((line) => line.trim())
     .filter((line) => line.length > 0) ?? fallbackGrammarExplanationLines
-  const nextGrammarExamples: NextGrammarExampleMessage[] = [
+  const grammarExplanationDir = grammarExplanation
+    ? contentTextDirection(toContentLanguage(grammarExplanation.lang))
+    : contentTextDirection(contentLanguage)
+  const fallbackNextGrammarExamples: NextGrammarExampleMessage[] = [
     {
       id: 'proposal',
       side: 'left',
       translation:
-        normalizedLanguage === 'hebrew'
+        contentLanguage === 'he'
           ? 'האם נאכל יחד צהריים?'
           : 'Shall we eat lunch together?',
       tokens: [
@@ -287,7 +382,7 @@ function GrammarPracticePage({
       id: 'reply',
       side: 'right',
       translation:
-        normalizedLanguage === 'hebrew'
+        contentLanguage === 'he'
           ? 'כן, בוא/י נאכל יחד.'
           : 'Yes, let’s eat together.',
       tokens: [
@@ -299,6 +394,18 @@ function GrammarPracticePage({
       ],
     },
   ]
+  // 서버가 이 섹션의 대화를 내려주면 레슨별 예문을 그대로 쓰고, 없을 때만 데모 예문으로 폴백한다.
+  // 서버 예문에는 문법/단어 마크 좌표가 없어서 Mark Grammar / Mark Vocab 하이라이트는 붙지 않는다.
+  const serverNextGrammarExamples: NextGrammarExampleMessage[] = grammarDialogueLines.map(
+    (line, index) => ({
+      id: `grammar-dialogue-${index}`,
+      side: line.speaker === grammarDialogueLines[0]?.speaker ? 'left' : 'right',
+      translation: pickDialogueTranslation(line, contentLanguage),
+      tokens: [{ text: line.ko, emphasis: 'medium' as const }],
+    }),
+  )
+  const nextGrammarExamples =
+    serverNextGrammarExamples.length > 0 ? serverNextGrammarExamples : fallbackNextGrammarExamples
   const nextGrammarGridItems = ['', 'V -ㄹ까요?', '가다', '갈까요?', '', 'V-을까요?', '먹다', '먹을까요?']
   const nextGrammarNotes: Record<NextGrammarNoteId, { title: string; description: string }> = {
     'future-proposal': {
@@ -507,6 +614,26 @@ function GrammarPracticePage({
     }
   }
 
+  const handleReadingAnswerChange = async (
+    index: number,
+    question: PracticeQuestionModel & { correctAnswer?: string },
+    answer: string,
+  ) => {
+    setReadingAnswers((prev) => ({ ...prev, [index]: answer }))
+
+    if (sectionId === null || question.questionId < 0 || answer.trim().length === 0) return
+
+    try {
+      const result = await checkAnswer.mutateAsync({
+        sectionId,
+        payload: { questionId: question.questionId, userAnswer: answer },
+      })
+      setReadingGradedAnswers((prev) => ({ ...prev, [index]: Boolean(result?.correct) }))
+    } catch {
+      // 채점 요청 실패는 오답으로 표시하지 않는다.
+    }
+  }
+
   useEffect(() => {
     if (choiceFeedback?.phase !== 'flash') return
 
@@ -661,7 +788,7 @@ function GrammarPracticePage({
             </button>
             <h1 className="grammar-practice-title">
               {isNextGrammarStep || isNextGrammarRulesStep
-                ? '을까요? 1)'
+                ? grammarContent?.title || '을까요? 1)'
                 : isListeningStep
                 ? 'Listening'
                 : isReadingStep
@@ -856,9 +983,9 @@ function GrammarPracticePage({
 
             <section className="grammar-practice-next-grammar-section" ref={nextGrammarLessonRef}>
               <h2 className="grammar-practice-next-grammar-heading">Grammar explanation</h2>
-              <div className="grammar-practice-next-grammar-description" dir={isTranslationRtl ? 'rtl' : 'ltr'}>
+              <div className="grammar-practice-next-grammar-description" dir={grammarExplanationDir}>
                 {grammarExplanationLines.map((line, index) => (
-                  <p key={index} className="grammar-practice-next-grammar-description-line">
+                  <p key={`${index}-${line}`} className="grammar-practice-next-grammar-description-line">
                     {line}
                   </p>
                 ))}
@@ -1112,46 +1239,76 @@ function GrammarPracticePage({
               </svg>
             </div>
             <section className="grammar-practice-listening-script-card">
-              <p className="grammar-practice-listening-script-line"><span className="grammar-practice-listening-script-speaker">남자</span> 토요일 몇 시에 만날까요?</p>
-              <p className="grammar-practice-listening-script-line"><span className="grammar-practice-listening-script-speaker">여자</span> 2시나 3시에 만나요.</p>
-              <p className="grammar-practice-listening-script-line"><span className="grammar-practice-listening-script-speaker">남자</span> 그럼 2시에 만나요.</p>
-              <p className="grammar-practice-listening-script-line grammar-practice-listening-script-line-indented">그런데 어디에서 만날까요?</p>
-              <p className="grammar-practice-listening-script-line"><span className="grammar-practice-listening-script-speaker">여자</span> 백화점 앞에서 만날까요?</p>
-              <p className="grammar-practice-listening-script-line"><span className="grammar-practice-listening-script-speaker">남자</span> 백화점 앞에는 사람이 많아요.</p>
-              <p className="grammar-practice-listening-script-line grammar-practice-listening-script-line-indented">2시에 서점 앞에서 만나요.</p>
-              <p className="grammar-practice-listening-script-line"><span className="grammar-practice-listening-script-speaker">여자</span> 네, 알았어요.</p>
+              {listeningDialogueLines.length > 0 ? (
+                listeningDialogueLines.map((line, index) => (
+                  <p key={`${index}-${line.ko}`} className="grammar-practice-listening-script-line">
+                    <span className="grammar-practice-listening-script-speaker">{line.speaker}</span> {line.ko}
+                  </p>
+                ))
+              ) : (
+                <>
+                  <p className="grammar-practice-listening-script-line"><span className="grammar-practice-listening-script-speaker">남자</span> 토요일 몇 시에 만날까요?</p>
+                  <p className="grammar-practice-listening-script-line"><span className="grammar-practice-listening-script-speaker">여자</span> 2시나 3시에 만나요.</p>
+                  <p className="grammar-practice-listening-script-line"><span className="grammar-practice-listening-script-speaker">남자</span> 그럼 2시에 만나요.</p>
+                  <p className="grammar-practice-listening-script-line grammar-practice-listening-script-line-indented">그런데 어디에서 만날까요?</p>
+                  <p className="grammar-practice-listening-script-line"><span className="grammar-practice-listening-script-speaker">여자</span> 백화점 앞에서 만날까요?</p>
+                  <p className="grammar-practice-listening-script-line"><span className="grammar-practice-listening-script-speaker">남자</span> 백화점 앞에는 사람이 많아요.</p>
+                  <p className="grammar-practice-listening-script-line grammar-practice-listening-script-line-indented">2시에 서점 앞에서 만나요.</p>
+                  <p className="grammar-practice-listening-script-line"><span className="grammar-practice-listening-script-speaker">여자</span> 네, 알았어요.</p>
+                </>
+              )}
             </section>
             <div className="grammar-practice-listening-question-viewport">
               <div className="grammar-practice-listening-question-track">
-                <section className="grammar-practice-listening-question-card">
-                  <p className="grammar-practice-listening-question-title">Question 1</p>
-                  <p className="grammar-practice-listening-question-prompt">두 사람은 몇시에 만나요?</p>
-                  <div className="grammar-practice-listening-options">
-                    {['2:00', '2:30', '3:00', '3:30'].map((option) => (
-                      <button
-                        key={option}
-                        type="button"
-                        className={`grammar-practice-listening-option-button ${
-                          listeningAnswer === option ? 'grammar-practice-listening-option-button-selected' : ''
-                        }`}
-                        onClick={() => setListeningAnswer(option)}
-                      >
-                        {option}
-                      </button>
-                    ))}
-                  </div>
-                </section>
-                <section
-                  className="grammar-practice-listening-question-card grammar-practice-listening-question-card-peek"
-                  aria-hidden="true"
-                >
-                  <p className="grammar-practice-listening-question-title">Question 2</p>
-                </section>
+                {activeListeningQuestion ? (
+                  <section className="grammar-practice-listening-question-card">
+                    <p className="grammar-practice-listening-question-title">{activeListeningQuestion.title}</p>
+                    <p className="grammar-practice-listening-question-prompt">{activeListeningQuestion.prompt}</p>
+                    {activeListeningQuestion.options.length > 0 ? (
+                      <div className="grammar-practice-listening-options">
+                        {activeListeningQuestion.options.map((option) => (
+                          <button
+                            key={option}
+                            type="button"
+                            className={`grammar-practice-listening-option-button ${
+                              listeningAnswer === option ? 'grammar-practice-listening-option-button-selected' : ''
+                            }`}
+                            onClick={() => setListeningAnswer(option)}
+                          >
+                            {option}
+                          </button>
+                        ))}
+                      </div>
+                    ) : (
+                      <input
+                        type="text"
+                        className="grammar-practice-answer-input"
+                        value={listeningAnswer}
+                        onChange={(event) => setListeningAnswer(event.target.value)}
+                      />
+                    )}
+                  </section>
+                ) : null}
+                {listeningQuestions.slice(1).map((question) => (
+                  <section
+                    key={question.questionId}
+                    className="grammar-practice-listening-question-card grammar-practice-listening-question-card-peek"
+                    aria-hidden="true"
+                  >
+                    <p className="grammar-practice-listening-question-title">{question.title}</p>
+                  </section>
+                ))}
               </div>
             </div>
             <div className="grammar-practice-listening-dots" aria-label="listening question progress">
-              <span className="grammar-practice-listening-dot grammar-practice-listening-dot-active" />
-              <span className="grammar-practice-listening-dot" />
+              {listeningQuestions.map((question, index) => (
+                <span
+                  key={question.questionId}
+                  className={`grammar-practice-listening-dot ${
+                    index === 0 ? 'grammar-practice-listening-dot-active' : ''
+                  }`}
+                />
+              ))}
             </div>
             <button
               type="button"
@@ -1190,27 +1347,40 @@ function GrammarPracticePage({
               </div>
             </div>
             <section className="grammar-practice-reading-card">
-              <p className="grammar-practice-reading-line">
-                <span className={`grammar-practice-reading-name ${showVocab ? 'is-visible' : ''}`}>건우</span>{' '}
-                마리 씨, 오늘 같이 영화를 볼까요?
-              </p>
-              <p className="grammar-practice-reading-line">
-                <span className={`grammar-practice-reading-name ${showVocab ? 'is-visible' : ''}`}>마리</span>{' '}
-                미안해요. 오늘은 회의가 있어요.
-              </p>
-              <p className="grammar-practice-reading-line grammar-practice-reading-line-indented">그래서 바빠요.</p>
-              <p className="grammar-practice-reading-line">
-                <span className={`grammar-practice-reading-name ${showVocab ? 'is-visible' : ''}`}>건우</span> 언제 시간이 있어요?
-              </p>
-              <p className="grammar-practice-reading-line">
-                <span className={`grammar-practice-reading-name ${showVocab ? 'is-visible' : ''}`}>마리</span> 저는 토요일이나 일요일이 좋아요.
-              </p>
-              <p className="grammar-practice-reading-line">
-                <span className={`grammar-practice-reading-name ${showVocab ? 'is-visible' : ''}`}>건우</span> 그럼 토요일에 만날까요?
-              </p>
-              <p className="grammar-practice-reading-line">
-                <span className={`grammar-practice-reading-name ${showVocab ? 'is-visible' : ''}`}>마리</span> 네, 좋아요. 토요일에 만나요.
-              </p>
+              {readingDialogueLines.length > 0 ? (
+                readingDialogueLines.map((line, index) => (
+                  <p key={`${index}-${line.ko}`} className="grammar-practice-reading-line">
+                    <span className={`grammar-practice-reading-name ${showVocab ? 'is-visible' : ''}`}>
+                      {line.speaker}
+                    </span>{' '}
+                    {line.ko}
+                  </p>
+                ))
+              ) : (
+                <>
+                  <p className="grammar-practice-reading-line">
+                    <span className={`grammar-practice-reading-name ${showVocab ? 'is-visible' : ''}`}>건우</span>{' '}
+                    마리 씨, 오늘 같이 영화를 볼까요?
+                  </p>
+                  <p className="grammar-practice-reading-line">
+                    <span className={`grammar-practice-reading-name ${showVocab ? 'is-visible' : ''}`}>마리</span>{' '}
+                    미안해요. 오늘은 회의가 있어요.
+                  </p>
+                  <p className="grammar-practice-reading-line grammar-practice-reading-line-indented">그래서 바빠요.</p>
+                  <p className="grammar-practice-reading-line">
+                    <span className={`grammar-practice-reading-name ${showVocab ? 'is-visible' : ''}`}>건우</span> 언제 시간이 있어요?
+                  </p>
+                  <p className="grammar-practice-reading-line">
+                    <span className={`grammar-practice-reading-name ${showVocab ? 'is-visible' : ''}`}>마리</span> 저는 토요일이나 일요일이 좋아요.
+                  </p>
+                  <p className="grammar-practice-reading-line">
+                    <span className={`grammar-practice-reading-name ${showVocab ? 'is-visible' : ''}`}>건우</span> 그럼 토요일에 만날까요?
+                  </p>
+                  <p className="grammar-practice-reading-line">
+                    <span className={`grammar-practice-reading-name ${showVocab ? 'is-visible' : ''}`}>마리</span> 네, 좋아요. 토요일에 만나요.
+                  </p>
+                </>
+              )}
             </section>
             <div
               className="grammar-practice-reading-question-viewport"
@@ -1264,11 +1434,16 @@ function GrammarPracticePage({
               >
                 {readingQuestions.map((question, index) => {
                   const selectedReadingAnswer = readingAnswers[index]
-                  const hasReadingChoiceResult = question.type === 'choice' && Boolean(selectedReadingAnswer)
-                  const isReadingChoiceCorrect = selectedReadingAnswer === question.correctAnswer
+                  const isReadingChoiceCorrect = hasServerQuestions
+                    ? readingGradedAnswers[index] === true
+                    : selectedReadingAnswer === question.correctAnswer
+                  const hasReadingChoiceResult =
+                    question.type === 'choice' &&
+                    Boolean(selectedReadingAnswer) &&
+                    (!hasServerQuestions || readingGradedAnswers[index] !== undefined)
 
                   return (
-                    <section key={question.title} className="grammar-practice-reading-question-slide">
+                    <section key={question.questionId} className="grammar-practice-reading-question-slide">
                       {hasReadingChoiceResult ? (
                         <span
                           className={`grammar-practice-reading-result-art ${
@@ -1296,8 +1471,10 @@ function GrammarPracticePage({
                           <div className="grammar-practice-reading-options">
                             {question.options.map((option) => {
                               const isSelectedOption = selectedReadingAnswer === option
-                              const isAnsweredChoice = Boolean(selectedReadingAnswer)
-                              const isCorrectOption = question.correctAnswer === option
+                              const isAnsweredChoice = hasReadingChoiceResult
+                              const isCorrectOption = hasServerQuestions
+                                ? isReadingChoiceCorrect
+                                : question.correctAnswer === option
                               const isCorrectSelectedOption = isSelectedOption && isAnsweredChoice && isCorrectOption
                               const isWrongSelectedOption = isSelectedOption && isAnsweredChoice && !isCorrectOption
 
@@ -1318,13 +1495,29 @@ function GrammarPracticePage({
                                   }`}
                                   onClick={() => {
                                     if (readingDidDragRef.current) return
-                                    setReadingAnswers((prev) => ({ ...prev, [index]: option }))
+                                    void handleReadingAnswerChange(index, question, option)
                                   }}
                                 >
                                   {option}
                                 </button>
                               )
                             })}
+                          </div>
+                        ) : hasServerQuestions ? (
+                          <div className="grammar-practice-reading-blank-group">
+                            <input
+                              type="text"
+                              className="grammar-practice-answer-input"
+                              value={selectedReadingAnswer ?? ''}
+                              onPointerDown={(event) => event.stopPropagation()}
+                              onPointerUp={(event) => event.stopPropagation()}
+                              onChange={(event) =>
+                                setReadingAnswers((prev) => ({ ...prev, [index]: event.target.value }))
+                              }
+                              onBlur={(event) =>
+                                void handleReadingAnswerChange(index, question, event.target.value)
+                              }
+                            />
                           </div>
                         ) : (
                           <div className="grammar-practice-reading-blank-group">
@@ -1375,7 +1568,7 @@ function GrammarPracticePage({
             <div className="grammar-practice-reading-dots" aria-label="reading question progress">
               {readingQuestions.map((question, index) => (
                 <span
-                  key={question.title}
+                  key={question.questionId}
                   className={`grammar-practice-reading-dot ${index === readingQuestionIndex ? 'grammar-practice-reading-dot-active' : ''}`}
                 />
               ))}

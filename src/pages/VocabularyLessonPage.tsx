@@ -6,8 +6,14 @@ import { useCreateScrap } from '../hooks/useCreateScrap.ts'
 import { useDeleteScrap } from '../hooks/useDeleteScrap.ts'
 import { useSaveSectionProgress } from '../hooks/useSaveSectionProgress.ts'
 import { useSectionPageTimer } from '../hooks/useSectionPageTimer.ts'
+import {
+  contentTextDirection,
+  pickLocaleText,
+  toContentLanguage,
+} from '../data/contentLanguage.ts'
 
 interface VocabularyLessonPageProps {
+  language: string
   sectionId: number | null
   initialView?: VocabularyLessonView
   initialCardIndex?: number
@@ -51,12 +57,15 @@ const fallbackVocabularyItems = [
 ]
 
 function VocabularyLessonPage({
+  language,
   sectionId,
   initialView = 'intro',
   initialCardIndex = 0,
   onBack,
   onOpenNextGrammar,
 }: VocabularyLessonPageProps) {
+  const contentLanguage = toContentLanguage(language)
+  const translationDir = contentTextDirection(contentLanguage)
   const { data: cardsData, loading: cardsLoading } = useSectionCards(sectionId)
   const createScrapMutation = useCreateScrap()
   const deleteScrapMutation = useDeleteScrap()
@@ -107,12 +116,13 @@ function VocabularyLessonPage({
       return cards.map((card) => ({
         id: card.id,
         word: card.wordFront,
-        meaning: card.wordBack,
-        note: card.notes ?? '',
+        // 뜻/노트는 mother language 로케일을 우선 사용하고 없으면 기본값으로 폴백한다.
+        meaning: pickLocaleText(card.locales, contentLanguage, 'back') ?? card.wordBack,
+        note: pickLocaleText(card.locales, contentLanguage, 'notes') ?? card.notes ?? '',
         audioUrl: card.audioUrl,
       }))
     },
-    [cardsData],
+    [cardsData, contentLanguage],
   )
 
   useSectionPageTimer({
@@ -408,7 +418,9 @@ function VocabularyLessonPage({
             <article className="vocabulary-lesson-flashcards-card">
               <p className="vocabulary-lesson-flashcards-label">Flashcards game</p>
               <h2 className="vocabulary-lesson-flashcards-word">{currentCard?.word ?? ''}</h2>
-              <p className="vocabulary-lesson-flashcards-meaning">{currentCard?.meaning ?? ''}</p>
+              <p className="vocabulary-lesson-flashcards-meaning" dir={translationDir}>
+                {currentCard?.meaning ?? ''}
+              </p>
             </article>
             <p className="vocabulary-lesson-flashcards-copy">
               Tap cards and quiz yourself with the words from this lesson.
@@ -532,10 +544,16 @@ function VocabularyLessonPage({
 
                                   <div className="vocabulary-lesson-flip-face vocabulary-lesson-flip-face-back">
                                     <div className="vocabulary-lesson-main-card-center">
-                                      <p className="vocabulary-lesson-main-card-back-copy">
+                                      <p
+                                        className="vocabulary-lesson-main-card-back-copy"
+                                        dir={translationDir}
+                                      >
                                         {entry.item.meaning}
                                       </p>
-                                      <p className="vocabulary-lesson-main-card-back-note">
+                                      <p
+                                        className="vocabulary-lesson-main-card-back-note"
+                                        dir={translationDir}
+                                      >
                                         {entry.item.note}
                                       </p>
                                     </div>
@@ -639,7 +657,7 @@ function VocabularyLessonPage({
                           <span className="vocabulary-lesson-table-word">
                             {item.word}
                           </span>
-                          <span className="vocabulary-lesson-table-meaning">
+                          <span className="vocabulary-lesson-table-meaning" dir={translationDir}>
                             {item.meaning}
                           </span>
                           <svg
@@ -666,7 +684,7 @@ function VocabularyLessonPage({
                           <div className="vocabulary-lesson-table-notes">
                             <p className="vocabulary-lesson-table-note-line">
                               <span className="vocabulary-lesson-table-note-label">Notes</span>
-                              <span>{item.note || item.meaning}</span>
+                              <span dir={translationDir}>{item.note || item.meaning}</span>
                             </p>
                             <p className="vocabulary-lesson-table-example">
                               한국어 예문

@@ -515,7 +515,8 @@ function App() {
     const nextAgeGroup = userMeData.profile.ageGroup ?? ''
     const nextBirthday = userMeData.profile.birthday ?? ''
     const nextAgeRange = nextBirthday || nextAgeGroup
-    const nextLanguage = userMeData.profile.motherLanguage ?? ''
+    // 서버에 mother language가 아직 없으면 온보딩에서 고른 값을 덮어쓰지 않는다.
+    const nextLanguage = userMeData.profile.motherLanguage ?? getStoredLanguage()
     const nextKoreanLevel = userMeData.profile.proficiencyLevel ?? ''
     const nextDailyGoal = userMeData.profile.dailyGoalMin?.toString() ?? ''
     const nextKoreanGoal = userMeData.profile.learningGoal ?? ''
@@ -913,12 +914,14 @@ function App() {
         />
       ) : visibleScreen === 'vocabulary' ? (
         <VocabularyPage
+          language={language}
           onBack={() => {
             setScreen('notebook')
           }}
         />
       ) : visibleScreen === 'vocabulary-lesson' ? (
         <VocabularyLessonPage
+          language={language}
           sectionId={selectedSectionId}
           initialView={getInitialVocabularyLessonView()}
           initialCardIndex={getInitialVocabularyCardIndex()}
@@ -938,6 +941,7 @@ function App() {
         />
       ) : visibleScreen === 'notebook-grammar' ? (
         <GrammarNotebookPage
+          language={language}
           onBack={() => {
             setScreen('notebook')
           }}

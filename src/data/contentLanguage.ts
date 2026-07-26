@@ -1,0 +1,84 @@
+import type {
+  CardLocales,
+  DialogueLine,
+  MaterialExplanation,
+} from '../types/section,types.ts'
+
+// 온보딩에서 고른 mother language를 학습 컨텐츠 언어로 연결하는 공통 유틸.
+// 온보딩은 'Hebrew' / 'English'로 저장하지만 서버/목 데이터는 'EN', 'he', 'iw' 등을
+// 섞어서 내려주기 때문에 항상 이 헬퍼로 정규화한 뒤 사용한다.
+export type ContentLanguage = 'en' | 'he'
+
+export const DEFAULT_CONTENT_LANGUAGE: ContentLanguage = 'en'
+
+const HEBREW_TAGS = new Set(['hebrew', 'he', 'heb', 'iw', 'he-il', 'iw-il', 'עברית'])
+const ENGLISH_TAGS = new Set(['english', 'en', 'eng', 'en-us', 'en-gb'])
+
+// 언어 태그를 컨텐츠 언어로 정규화한다. 'ko'처럼 번역 대상이 아닌 값은 null.
+export const normalizeLanguageTag = (
+  value: string | null | undefined,
+): ContentLanguage | null => {
+  const normalized = (value ?? '').trim().toLowerCase()
+  if (HEBREW_TAGS.has(normalized)) return 'he'
+  if (ENGLISH_TAGS.has(normalized)) return 'en'
+  return null
+}
+
+// mother language 값은 알 수 없더라도 화면을 그려야 하므로 영어로 폴백한다.
+export const toContentLanguage = (
+  motherLanguage: string | null | undefined,
+): ContentLanguage => normalizeLanguageTag(motherLanguage) ?? DEFAULT_CONTENT_LANGUAGE
+
+export const isRtlContentLanguage = (language: ContentLanguage): boolean =>
+  language === 'he'
+
+export const contentTextDirection = (language: ContentLanguage): 'rtl' | 'ltr' =>
+  isRtlContentLanguage(language) ? 'rtl' : 'ltr'
+
+// 선택한 컨텐츠 언어 -> 기본(영어) 순으로 폴백한다.
+const withFallbackOrder = (language: ContentLanguage): ContentLanguage[] =>
+  language === DEFAULT_CONTENT_LANGUAGE
+    ? [DEFAULT_CONTENT_LANGUAGE]
+    : [language, DEFAULT_CONTENT_LANGUAGE]
+
+export const pickDialogueTranslation = (
+  line: DialogueLine,
+  language: ContentLanguage,
+): string => {
+  for (const code of withFallbackOrder(language)) {
+    const text = line[code]
+    if (text && text.trim().length > 0) return text
+  }
+  return ''
+}
+
+export const pickExplanation = (
+  explanations: MaterialExplanation[] | undefined,
+  language: ContentLanguage,
+): MaterialExplanation | null => {
+  if (!explanations || explanations.length === 0) return null
+
+  for (const code of withFallbackOrder(language)) {
+    const match = explanations.find(
+      (explanation) => normalizeLanguageTag(explanation.lang) === code,
+    )
+    if (match) return match
+  }
+
+  // 번역 항목이 하나도 없으면(ko만 내려온 경우 등) 첫 항목이라도 보여준다.
+  return explanations[0]
+}
+
+export const pickLocaleText = (
+  locales: CardLocales | undefined,
+  language: ContentLanguage,
+  field: 'back' | 'notes',
+): string | null => {
+  if (!locales) return null
+
+  for (const code of withFallbackOrder(language)) {
+    const text = locales[code]?.[field]
+    if (text && text.trim().length > 0) return text
+  }
+  return null
+}
