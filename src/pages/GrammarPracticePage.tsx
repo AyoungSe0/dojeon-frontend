@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { Fragment, useEffect, useMemo, useRef, useState } from 'react'
 import './GrammarPracticePage.css'
 import exampleRightImage from '../assets/7.png'
 import exampleLeftImage from '../assets/10.png'
@@ -14,8 +14,8 @@ import { useSectionMaterials } from '../hooks/useSectionMaterials.ts'
 import {
   contentTextDirection,
   isRtlContentLanguage,
+  pickContentExplanation,
   pickDialogueTranslation,
-  pickExplanation,
   toContentLanguage,
 } from '../data/contentLanguage.ts'
 import type {
@@ -112,12 +112,56 @@ function toDialogueLines(material: SectionMaterial | null): DialogueLine[] {
   return (material?.contentText?.dialogues ?? []).flatMap((dialogue) => dialogue.lines ?? [])
 }
 
+interface TextAnswerGrade {
+  answer: string
+  correct: boolean
+  correctAnswer?: string
+}
+
 interface PracticeQuestionModel {
   questionId: number
   title: string
   prompt: string
   type: 'choice' | 'blank'
   options: string[]
+  answer: string | null
+}
+
+// contentText.table 은 행 배열([["","V-ㄹ까요?",...], ...]) 또는 셀 배열로 올 수 있어 셀 목록으로 펼친다.
+// 문자열/숫자가 아닌 모양이면 빈 배열을 돌려 기존 표를 그대로 쓰게 한다.
+function toTableCells(table: unknown): string[] {
+  if (!Array.isArray(table)) return []
+
+  const cells: string[] = []
+  for (const row of table) {
+    const rowCells = Array.isArray(row) ? row : [row]
+    for (const cell of rowCells) {
+      if (cell === null || cell === undefined) {
+        cells.push('')
+        continue
+      }
+      if (typeof cell !== 'string' && typeof cell !== 'number') return []
+      cells.push(String(cell))
+    }
+  }
+
+  return cells
+}
+
+function matchesQuestionType(question: SectionQuestion, keywords: string[]): boolean {
+  const type = (question.type ?? '').toUpperCase()
+  return keywords.some((keyword) => type.includes(keyword))
+}
+
+// 문장 만들기 단계에 보여줄 제시어. 서버가 "준호 / 커피 / 마시다" 처럼 구분자로 내려주면 쪼개고,
+// 아니면 문항 텍스트를 그대로 한 덩어리로 보여준다.
+function toSentenceTokens(questionText: string | undefined): string[] {
+  const tokens = (questionText ?? '')
+    .split(/[/,·|]/)
+    .map((token) => token.trim())
+    .filter((token) => token.length > 0)
+
+  return tokens.length > 0 ? tokens : []
 }
 
 function toPracticeQuestions(questions: SectionQuestion[]): PracticeQuestionModel[] {
@@ -127,6 +171,7 @@ function toPracticeQuestions(questions: SectionQuestion[]): PracticeQuestionMode
     prompt: question.questionText,
     type: (question.options?.length ?? 0) > 0 ? 'choice' : 'blank',
     options: question.options ?? [],
+    answer: question.answer,
   }))
 }
 
@@ -154,8 +199,34 @@ function GrammarPracticePage({
   const createScrap = useCreateScrap()
 
   const firstMcq = useMemo(() => {
-    return questionsData?.questions.find((q) => q.type === 'MCQ') ?? null
+    const questions = questionsData?.questions ?? []
+    return (
+      questions.find((q) => matchesQuestionType(q, ['MCQ', 'CHOICE'])) ??
+      questions.find((q) => (q.options?.length ?? 0) > 0) ??
+      null
+    )
   }, [questionsData])
+
+  // 주관식 문항: 빈칸 채우기(fill) / 문장 만들기(make) 단계에 각각 연결한다.
+  // 서버 type 문자열이 확정되지 않아 키워드로 찾고, 없으면 보기 없는 문항을 순서대로 쓴다.
+  const textQuestions = useMemo(
+    () => (questionsData?.questions ?? []).filter((q) => (q.options?.length ?? 0) === 0),
+    [questionsData],
+  )
+  const fillQuestion = useMemo(
+    () =>
+      textQuestions.find((q) => matchesQuestionType(q, ['BLANK', 'FILL', 'SHORT', 'WORD'])) ??
+      textQuestions[0] ??
+      null,
+    [textQuestions],
+  )
+  const makeQuestion = useMemo(() => {
+    const byType = textQuestions.find((q) =>
+      matchesQuestionType(q, ['SENTENCE', 'MAKE', 'WRITE', 'COMPOSE']),
+    )
+    if (byType) return byType
+    return textQuestions.find((q) => q.id !== fillQuestion?.id) ?? null
+  }, [textQuestions, fillQuestion])
 
   const grammarMaterial = useMemo(() => {
     return materialsData?.materials.find((m) => m.type === 'GRAMMAR_TABLE') ?? null
@@ -190,8 +261,15 @@ function GrammarPracticePage({
 
   const choicePrompt = firstMcq?.questionText ?? fallbackChoicePrompt
   const choiceOptions = firstMcq?.options ?? fallbackChoiceOptions
+  const fillPrompt = fillQuestion?.questionText ?? choicePrompt
+  const fallbackSentenceTokens = ['준호', '커피', '마시다']
+  const serverSentenceTokens = toSentenceTokens(makeQuestion?.questionText)
+  const sentenceTokens =
+    serverSentenceTokens.length > 0 ? serverSentenceTokens : fallbackSentenceTokens
 
   const [serverGradedAnswers, setServerGradedAnswers] = useState<Record<string, boolean>>({})
+  const [fillGrade, setFillGrade] = useState<TextAnswerGrade | null>(null)
+  const [makeGrade, setMakeGrade] = useState<TextAnswerGrade | null>(null)
 
   const [practiceStep, setPracticeStep] = useState<PracticeStep>(initialPracticeStep)
   const [selectedAnswer, setSelectedAnswer] = useState('')
@@ -265,7 +343,13 @@ function GrammarPracticePage({
     ? submittedTypedAnswer
     : selectedAnswer
 
-  const correctAnswer = isMakeStep ? makeCorrectAnswer : fillCorrectAnswer
+  // fill/make 는 서버 문항이 있으면 서버 채점 결과를 쓰고, 없을 때만 데모 정답과 비교한다.
+  const activeTextQuestion = isMakeStep ? makeQuestion : fillQuestion
+  const activeTextGrade = isMakeStep ? makeGrade : fillGrade
+  const matchedTextGrade =
+    activeTextGrade && activeTextGrade.answer === currentAnswer ? activeTextGrade : null
+  const correctAnswer =
+    matchedTextGrade?.correctAnswer ?? (isMakeStep ? makeCorrectAnswer : fillCorrectAnswer)
   const isAnswered = currentAnswer.length > 0
 
   let isCorrectAnswer: boolean
@@ -276,6 +360,9 @@ function GrammarPracticePage({
   } else if (!isFillStep && !isMakeStep) {
     isCorrectAnswer = isAnswered && serverGradedAnswers[currentAnswer] === true
     isWrongAnswer = isAnswered && serverGradedAnswers[currentAnswer] === false
+  } else if (activeTextQuestion) {
+    isCorrectAnswer = matchedTextGrade?.correct === true
+    isWrongAnswer = matchedTextGrade?.correct === false
   } else {
     isCorrectAnswer = currentAnswer === correctAnswer
     isWrongAnswer = isAnswered && !isCorrectAnswer
@@ -298,18 +385,25 @@ function GrammarPracticePage({
 
   // 서버 문항이 내려오면 그것을 쓰고, 없을 때만 기존 데모 문항으로 폴백한다.
   const hasServerQuestions = serverPracticeQuestions.length > 0
-  const fallbackReadingQuestions: (PracticeQuestionModel & { correctAnswer?: string })[] = [
+  const fallbackReadingQuestions: PracticeQuestionModel[] = [
     {
       questionId: -1,
       title: 'Question 1',
       prompt: '두 사람은 며칠에 만났어요?',
       type: 'choice',
       options: ['월요일', '수요일', '토요일', '일요일'],
-      correctAnswer: '토요일',
+      answer: '토요일',
     },
-    { questionId: -2, title: 'Question 2', prompt: '마리 씨는 왜 오늘 영화를 못 봐요?', type: 'blank', options: [] },
+    {
+      questionId: -2,
+      title: 'Question 2',
+      prompt: '마리 씨는 왜 오늘 영화를 못 봐요?',
+      type: 'blank',
+      options: [],
+      answer: null,
+    },
   ]
-  const readingQuestions: (PracticeQuestionModel & { correctAnswer?: string })[] = hasServerQuestions
+  const readingQuestions: PracticeQuestionModel[] = hasServerQuestions
     ? serverPracticeQuestions
     : fallbackReadingQuestions
   const isReadingComplete = hasServerQuestions
@@ -330,8 +424,9 @@ function GrammarPracticePage({
       prompt: '두 사람은 몇시에 만나요?',
       type: 'choice',
       options: ['2:00', '2:30', '3:00', '3:30'],
+      answer: '2:00',
     },
-    { questionId: -12, title: 'Question 2', prompt: '', type: 'blank', options: [] },
+    { questionId: -12, title: 'Question 2', prompt: '', type: 'blank', options: [], answer: null },
   ]
   const listeningQuestions = hasServerQuestions ? serverPracticeQuestions : fallbackListeningQuestions
   const activeListeningQuestion = listeningQuestions[0] ?? null
@@ -340,7 +435,7 @@ function GrammarPracticePage({
   const contentLanguage = toContentLanguage(language)
   const isTranslationRtl = isRtlContentLanguage(contentLanguage)
   // 서버 설명이 있으면 mother language에 맞는 것을 쓰고, 없으면 언어별 기본 문구로 폴백한다.
-  const grammarExplanation = pickExplanation(grammarContent?.explanations, contentLanguage)
+  const grammarExplanation = pickContentExplanation(grammarContent, contentLanguage)
   const fallbackGrammarExplanationLines =
     contentLanguage === 'he'
       ? [
@@ -406,7 +501,10 @@ function GrammarPracticePage({
   )
   const nextGrammarExamples =
     serverNextGrammarExamples.length > 0 ? serverNextGrammarExamples : fallbackNextGrammarExamples
-  const nextGrammarGridItems = ['', 'V -ㄹ까요?', '가다', '갈까요?', '', 'V-을까요?', '먹다', '먹을까요?']
+  const fallbackGrammarGridItems = ['', 'V -ㄹ까요?', '가다', '갈까요?', '', 'V-을까요?', '먹다', '먹을까요?']
+  const serverGrammarGridItems = toTableCells(grammarContent?.table)
+  const nextGrammarGridItems =
+    serverGrammarGridItems.length > 0 ? serverGrammarGridItems : fallbackGrammarGridItems
   const nextGrammarNotes: Record<NextGrammarNoteId, { title: string; description: string }> = {
     'future-proposal': {
       title: '-(으)ㄹ까요?',
@@ -471,6 +569,8 @@ function GrammarPracticePage({
     setMakeSentenceAnswer('')
     setSubmittedMakeSentenceAnswer('')
     setServerGradedAnswers({})
+    setFillGrade(null)
+    setMakeGrade(null)
   }
   const isNextGrammarDialogActive = (
     kind: NextGrammarDialogState['kind'],
@@ -596,6 +696,14 @@ function GrammarPracticePage({
       return
     }
 
+    // 문항에 정답이 함께 내려오면 채점 API를 기다리지 않고 바로 판정한다.
+    if (firstMcq.answer) {
+      const isCorrectChoice = option.trim() === firstMcq.answer.trim()
+      setServerGradedAnswers((prev) => ({ ...prev, [option]: isCorrectChoice }))
+      setChoiceFeedback({ answer: option, result: isCorrectChoice ? 'correct' : 'wrong', phase: 'flash' })
+      return
+    }
+
     if (sectionId === null) return
 
     try {
@@ -614,14 +722,61 @@ function GrammarPracticePage({
     }
   }
 
+  const handleTextAnswerSubmit = async (kind: 'fill' | 'make', rawAnswer: string) => {
+    const answer = rawAnswer.trim()
+    if (kind === 'fill') setSubmittedTypedAnswer(answer)
+    else setSubmittedMakeSentenceAnswer(answer)
+
+    const question = kind === 'fill' ? fillQuestion : makeQuestion
+    if (!question || answer.length === 0) return
+
+    if (question.answer) {
+      const grade: TextAnswerGrade = {
+        answer,
+        correct: answer === question.answer.trim(),
+        correctAnswer: question.answer,
+      }
+      if (kind === 'fill') setFillGrade(grade)
+      else setMakeGrade(grade)
+      return
+    }
+
+    if (sectionId === null) return
+
+    try {
+      const result = await checkAnswer.mutateAsync({
+        sectionId,
+        payload: { questionId: question.id, userAnswer: answer },
+      })
+      const grade: TextAnswerGrade = {
+        answer,
+        correct: Boolean(result?.correct),
+        correctAnswer: result?.correctAnswer,
+      }
+      if (kind === 'fill') setFillGrade(grade)
+      else setMakeGrade(grade)
+    } catch {
+      // 채점 요청 실패는 오답으로 표시하지 않는다.
+    }
+  }
+
   const handleReadingAnswerChange = async (
     index: number,
-    question: PracticeQuestionModel & { correctAnswer?: string },
+    question: PracticeQuestionModel,
     answer: string,
   ) => {
     setReadingAnswers((prev) => ({ ...prev, [index]: answer }))
 
-    if (sectionId === null || question.questionId < 0 || answer.trim().length === 0) return
+    if (answer.trim().length === 0) return
+
+    // 문항에 정답이 함께 오면 바로 채점한다.
+    if (question.answer) {
+      const isCorrect = answer.trim() === question.answer.trim()
+      setReadingGradedAnswers((prev) => ({ ...prev, [index]: isCorrect }))
+      return
+    }
+
+    if (sectionId === null || question.questionId < 0) return
 
     try {
       const result = await checkAnswer.mutateAsync({
@@ -658,7 +813,7 @@ function GrammarPracticePage({
           payload: {
             currentPage: 1,
             stayTimeSeconds: 0,
-            forceComplete: reviewMarkComplete === true,
+            isCompleted: reviewMarkComplete === true,
             difficulty: reviewMarkComplete === true ? reviewDifficulty : undefined,
           },
         })
@@ -1434,13 +1589,11 @@ function GrammarPracticePage({
               >
                 {readingQuestions.map((question, index) => {
                   const selectedReadingAnswer = readingAnswers[index]
-                  const isReadingChoiceCorrect = hasServerQuestions
-                    ? readingGradedAnswers[index] === true
-                    : selectedReadingAnswer === question.correctAnswer
+                  const isReadingChoiceCorrect = readingGradedAnswers[index] === true
                   const hasReadingChoiceResult =
                     question.type === 'choice' &&
                     Boolean(selectedReadingAnswer) &&
-                    (!hasServerQuestions || readingGradedAnswers[index] !== undefined)
+                    readingGradedAnswers[index] !== undefined
 
                   return (
                     <section key={question.questionId} className="grammar-practice-reading-question-slide">
@@ -1472,9 +1625,7 @@ function GrammarPracticePage({
                             {question.options.map((option) => {
                               const isSelectedOption = selectedReadingAnswer === option
                               const isAnsweredChoice = hasReadingChoiceResult
-                              const isCorrectOption = hasServerQuestions
-                                ? isReadingChoiceCorrect
-                                : question.correctAnswer === option
+                              const isCorrectOption = isReadingChoiceCorrect
                               const isCorrectSelectedOption = isSelectedOption && isAnsweredChoice && isCorrectOption
                               const isWrongSelectedOption = isSelectedOption && isAnsweredChoice && !isCorrectOption
 
@@ -1596,11 +1747,14 @@ function GrammarPracticePage({
             >
               <div className="grammar-practice-question-stack grammar-practice-question-stack-make">
                 <div className="grammar-practice-make-row" aria-label="sentence building prompt">
-                  <span className="grammar-practice-make-token">준호</span>
-                  <span className="grammar-practice-make-divider" aria-hidden="true" />
-                  <span className="grammar-practice-make-token">커피</span>
-                  <span className="grammar-practice-make-divider" aria-hidden="true" />
-                  <span className="grammar-practice-make-token">마시다</span>
+                  {sentenceTokens.map((token, index) => (
+                    <Fragment key={`${index}-${token}`}>
+                      {index > 0 ? (
+                        <span className="grammar-practice-make-divider" aria-hidden="true" />
+                      ) : null}
+                      <span className="grammar-practice-make-token">{token}</span>
+                    </Fragment>
+                  ))}
                 </div>
                 <div className="grammar-practice-answer-column grammar-practice-answer-column-make">
                   <div className="grammar-practice-make-input-wrap">
@@ -1617,13 +1771,13 @@ function GrammarPracticePage({
                         if (e.key === 'Enter') {
                           e.preventDefault()
                           pushHistory()
-                          setSubmittedMakeSentenceAnswer(makeSentenceAnswer.trim())
+                          void handleTextAnswerSubmit('make', makeSentenceAnswer)
                         }
                       }}
                     />
                   </div>
                   {isWrongAnswer ? (
-                    <p className="grammar-practice-correct-answer grammar-practice-correct-answer-make">{makeCorrectAnswer}</p>
+                    <p className="grammar-practice-correct-answer grammar-practice-correct-answer-make">{correctAnswer}</p>
                   ) : null}
                 </div>
               </div>
@@ -1670,7 +1824,7 @@ function GrammarPracticePage({
             >
               <div className="grammar-practice-question-stack">
                 <div className="grammar-practice-question-row">
-                  <p className="grammar-practice-question-text">{choicePrompt}</p>
+                  <p className="grammar-practice-question-text">{isFillStep ? fillPrompt : choicePrompt}</p>
                   <div className="grammar-practice-answer-column">
                     {isFillStep ? (
                       <input
@@ -1683,7 +1837,7 @@ function GrammarPracticePage({
                           if (e.key === 'Enter') {
                             e.preventDefault()
                             pushHistory()
-                            setSubmittedTypedAnswer(typedAnswer.trim())
+                            void handleTextAnswerSubmit('fill', typedAnswer)
                           }
                         }}
                       />
@@ -1691,7 +1845,9 @@ function GrammarPracticePage({
                       <div className="grammar-practice-answer-slot">{isAnswered ? selectedAnswer : null}</div>
                     )}
                     {isFillStep && isWrongAnswer ? (
-                      <p className="grammar-practice-correct-answer grammar-practice-correct-answer-fill">마시다</p>
+                      <p className="grammar-practice-correct-answer grammar-practice-correct-answer-fill">
+                        {correctAnswer}
+                      </p>
                     ) : null}
                   </div>
                   <span className="grammar-practice-question-dot">.</span>

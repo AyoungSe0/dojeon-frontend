@@ -5,8 +5,8 @@ import { useSectionMaterials } from '../hooks/useSectionMaterials.ts'
 import type { GrammarScrapItem } from '../types/scraps.types.ts'
 import {
   contentTextDirection,
+  pickContentExplanation,
   pickDialogueTranslation,
-  pickExplanation,
   toContentLanguage,
   type ContentLanguage,
 } from '../data/contentLanguage.ts'
@@ -233,7 +233,7 @@ function GrammarDetail({
   const material = data?.materials.find((item) => item.type === 'GRAMMAR_TABLE') ?? data?.materials[0]
   const content = material?.contentText
   // 모든 언어를 나열하지 않고 mother language에 해당하는 설명만 보여준다.
-  const explanation = pickExplanation(content?.explanations, contentLanguage)
+  const explanation = pickContentExplanation(content, contentLanguage)
   const dialogues = content?.dialogues ?? []
   const translationDir = contentTextDirection(contentLanguage)
 
