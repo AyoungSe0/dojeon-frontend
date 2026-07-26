@@ -1,6 +1,10 @@
 import type {
+    MaterialContentText,
+    SectionMaterial,
     SectionMaterialData,
+    SectionCard,
     SectionCardData,
+    SectionQuestion,
     SectionQuestionData,
     SectionCheckAnswerRequest,
     SectionCheckAnswerData,
@@ -116,11 +120,54 @@ async function fetchSectionResponse<T>(
     return body as T
 }
 
+// 섹션 응답들은 data 가 배열로 오기도 하고 { materials } / { cards } / { questions } 로 감싸 오기도 한다.
+function toRawList(data: unknown, wrapperKey: string): Record<string, unknown>[] {
+    if (Array.isArray(data)) return data as Record<string, unknown>[]
+    if (data && typeof data === 'object') {
+        const wrapped = (data as Record<string, unknown>)[wrapperKey]
+        if (Array.isArray(wrapped)) return wrapped as Record<string, unknown>[]
+    }
+    return []
+}
+
+function toId(...candidates: unknown[]): number {
+    for (const candidate of candidates) {
+        if (typeof candidate === 'number') return candidate
+        if (typeof candidate === 'string' && candidate.trim().length > 0) return Number(candidate)
+    }
+    return 0
+}
+
+function normalizeMaterial(raw: Record<string, unknown>, index: number): SectionMaterial {
+    const contentText = (raw.contentText ?? {}) as MaterialContentText
+    return {
+        id: toId(raw.materialId, raw.id),
+        type: String(raw.type ?? ''),
+        sequence: typeof raw.sequence === 'number' ? raw.sequence : index + 1,
+        isExtra: raw.isExtra === true,
+        contentText,
+    }
+}
+
+function normalizeCard(raw: Record<string, unknown>, index: number): SectionCard {
+    return {
+        id: toId(raw.cardId, raw.id),
+        wordFront: String(raw.wordFront ?? ''),
+        wordBack: String(raw.wordBack ?? ''),
+        notes: typeof raw.notes === 'string' ? raw.notes : undefined,
+        locales: (raw.locales ?? null) as SectionCard['locales'],
+        audioUrl: typeof raw.audioUrl === 'string' ? raw.audioUrl : null,
+        sequence: typeof raw.sequence === 'number' ? raw.sequence : index + 1,
+        isScraped: raw.isScraped === true,
+        scrapId: typeof raw.scrapId === 'string' ? raw.scrapId : null,
+    }
+}
+
 export async function fetchSectionMaterials(
     sectionId: number,
     signal?: AbortSignal,
 ): Promise<SectionMaterialData | null> {
-    return fetchSectionResponse<SectionMaterialData>(
+    const data = await fetchSectionResponse<unknown>(
         `${API_BASE_URL}/section/${sectionId}/material`,
         {
             method: 'GET',
@@ -129,13 +176,20 @@ export async function fetchSectionMaterials(
         },
         'Failed to fetch materials',
     )
+
+    if (data === null) return null
+
+    return {
+        sectionId,
+        materials: toRawList(data, 'materials').map(normalizeMaterial),
+    }
 }
 
 export async function fetchSectionCards(
     sectionId: number,
     signal?: AbortSignal,
 ): Promise<SectionCardData | null> {
-    return fetchSectionResponse<SectionCardData>(
+    const data = await fetchSectionResponse<unknown>(
         `${API_BASE_URL}/section/${sectionId}/card`,
         {
             method: 'GET',
@@ -144,13 +198,34 @@ export async function fetchSectionCards(
         },
         'Failed to fetch cards',
     )
+
+    if (data === null) return null
+
+    return {
+        sectionId,
+        cards: toRawList(data, 'cards').map(normalizeCard),
+    }
+}
+
+// 문항 응답이 { sectionId, questions } 로 오기도 하고 배열로 바로 오기도 해서 한 모양으로 맞춘다.
+// 식별자도 id / questionId 가 섞여 있어 둘 다 받는다.
+function normalizeSectionQuestion(raw: Record<string, unknown>): SectionQuestion {
+    const answer = raw.answer ?? raw.correctAnswer
+    return {
+        id: typeof raw.id === 'number' ? raw.id : Number(raw.questionId ?? raw.id ?? 0),
+        type: String(raw.type ?? ''),
+        questionText: String(raw.questionText ?? ''),
+        options: Array.isArray(raw.options) ? raw.options.map((option) => String(option)) : [],
+        answer: typeof answer === 'string' && answer.length > 0 ? answer : null,
+        explanation: typeof raw.explanation === 'string' ? raw.explanation : null,
+    }
 }
 
 export async function fetchSectionQuestions(
     sectionId: number,
     signal?: AbortSignal,
 ): Promise<SectionQuestionData | null> {
-    return fetchSectionResponse<SectionQuestionData>(
+    const data = await fetchSectionResponse<unknown>(
         `${API_BASE_URL}/section/${sectionId}/question`,
         {
             method: 'GET',
@@ -159,6 +234,13 @@ export async function fetchSectionQuestions(
         },
         'Failed to fetch questions',
     )
+
+    if (data === null) return null
+
+    return {
+        sectionId,
+        questions: toRawList(data, 'questions').map(normalizeSectionQuestion),
+    }
 }
 
 export async function checkSectionAnswer(

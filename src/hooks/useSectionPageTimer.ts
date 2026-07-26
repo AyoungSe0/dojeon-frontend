@@ -32,7 +32,7 @@ export function useSectionPageTimer({
         sectionId,
         {
           currentPage: pageNumber + 1,
-          pageNumber,
+          isCompleted: false,
           stayTimeSeconds: elapsedSeconds,
         },
         generateIdempotencyKey(),
