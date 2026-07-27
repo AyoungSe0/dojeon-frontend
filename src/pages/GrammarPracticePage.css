@@ -2224,13 +2224,15 @@
 
 .grammar-practice-listening-screen {
   width: calc(100% + 48px);
-  min-height: calc(100vh - 149px);
+  height: calc(100dvh - 83px); /* header 64px + 화면 상단 간격 19px을 제외하고 실제 화면 하단까지 사용. */
+  min-height: 0;
   margin-top: 19px;
   margin-left: -24px;
   margin-right: -24px;
   display: flex;
   flex-direction: column;
   align-items: center;
+  box-sizing: border-box;
 }
 
 .grammar-practice-listening-toggle-row {
@@ -2307,14 +2309,14 @@
 .grammar-practice-listening-script-line {
   margin: 0;
   color: var(--dojeon-color-gray-900);
-  font-size: 14px;
+  font-size: 16px;
   font-weight: 400;
   line-height: 1.25;
   text-align: left;
 }
 
 .grammar-practice-listening-script-speaker {
-  font-size: 14px;
+  font-size: 16px;
   font-weight: 700;
 }
 
@@ -2322,26 +2324,59 @@
   padding-left: 34px;
 }
 
+.grammar-practice-listening-scroll-area {
+  width: 100%;
+  min-height: 0;
+  flex: 1;
+  padding-bottom: calc(env(safe-area-inset-bottom) + 110px); /* 하단 34px + Next 54px + 진행점 아래 간격 22px */
+  box-sizing: border-box;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  overflow-y: auto;
+  overscroll-behavior-y: contain;
+  scrollbar-width: none;
+}
+
+.grammar-practice-listening-scroll-area::-webkit-scrollbar {
+  display: none;
+}
+
 .grammar-practice-listening-question-viewport {
   width: 100%;
-  margin-top: 0;
+  margin-top: auto;
   overflow: hidden;
+  flex: 0 0 auto;
 }
 
 .grammar-practice-listening-screen-script-visible .grammar-practice-listening-question-viewport {
-  margin-top: 10px;
+  margin-top: auto;
+  padding-top: 18px;
+  box-sizing: border-box;
 }
 
 .grammar-practice-listening-question-track {
   display: flex;
   gap: 8px;
-  transform: translateX(20px);
+  transition: transform 220ms ease;
+  touch-action: pan-y;
+}
+
+.grammar-practice-listening-question-track.is-dragging {
+  transition: none;
+}
+
+.grammar-practice-listening-question-slide {
+  position: relative;
+  width: 350px;
+  flex: 0 0 350px;
+  padding-top: 48px;
+  box-sizing: border-box;
 }
 
 .grammar-practice-listening-question-card {
-  width: 350px;
+  width: 100%;
   min-height: 134px;
-  flex: 0 0 350px;
   border: 1px solid var(--dojeon-color-primary-border);
   border-radius: 10px;
   background: var(--dojeon-color-vocabulary-row);
@@ -2355,7 +2390,7 @@
 .grammar-practice-listening-question-title {
   margin: 0;
   color: var(--dojeon-color-primary-action);
-  font-size: 14px;
+  font-size: 16px;
   font-weight: 700;
   line-height: 1.2;
 }
@@ -2363,7 +2398,7 @@
 .grammar-practice-listening-question-prompt {
   margin: 6px 0 0;
   color: var(--dojeon-color-gray-900);
-  font-size: 12px;
+  font-size: 14px;
   font-weight: 500;
   line-height: 1.3;
 }
@@ -2386,7 +2421,7 @@
   background: var(--dojeon-color-surface);
   color: var(--dojeon-color-gray-900);
   box-sizing: border-box;
-  font-size: 12px;
+  font-size: 14px;
   font-weight: 400;
   line-height: 1.2;
   cursor: pointer;
@@ -2399,13 +2434,22 @@
   font-weight: 600;
 }
 
+.grammar-practice-listening-option-button-correct {
+  border-color: var(--dojeon-color-success);
+}
+
+.grammar-practice-listening-option-button-wrong {
+  border-color: var(--dojeon-color-error);
+}
+
 .grammar-practice-listening-question-card-peek {
   justify-content: flex-start;
   padding-top: 16px;
 }
 
 .grammar-practice-listening-dots {
-  margin-top: 10px;
+  margin-top: 12px;
+  flex: 0 0 auto;
   display: flex;
   justify-content: center;
   gap: 6px;
@@ -2422,11 +2466,24 @@
   background: var(--dojeon-color-gray-900);
 }
 
+.grammar-practice-listening-action-row {
+  position: fixed;
+  left: 50%;
+  bottom: calc(env(safe-area-inset-bottom) + 34px);
+  transform: translateX(-50%);
+  width: 350px;
+  max-width: calc(100% - 40px);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  z-index: 4;
+}
+
 .grammar-practice-listening-next-button {
   width: 350px;
   max-width: 100%;
   height: 54px;
-  margin-top: auto;
+  margin: 0;
   border: 0;
   border-radius: 10px;
   background: var(--dojeon-color-gray-200);
@@ -2436,6 +2493,14 @@
   line-height: 1.2;
   text-transform: uppercase;
   cursor: not-allowed;
+}
+
+.grammar-practice-listening-save-error {
+  position: absolute;
+  left: 0;
+  bottom: calc(100% + 8px);
+  width: 100%;
+  margin: 0;
 }
 
 .grammar-practice-listening-next-button-active {
