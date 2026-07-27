@@ -593,8 +593,20 @@ function GrammarPracticePage({
   const fillResultImage = isCorrectAnswer ? choiceCorrectImage : choiceWrongImage
   const showMakeResultPanel = isMakeStep && isAnswered && (isCorrectAnswer || isWrongAnswer)
   const makeResultImage = isCorrectAnswer ? choiceCorrectImage : choiceWrongImage
+  const hasCompletedTextGrade = matchedTextGrade !== null
   const canMoveToNextPracticeStep =
-    isAnswered && !checkAnswer.isPending && (!isChoiceStep || showChoiceFeedbackPanel)
+    isAnswered &&
+    !checkAnswer.isPending &&
+    (!isChoiceStep || showChoiceFeedbackPanel) &&
+    (!(isFillStep || isMakeStep) || hasCompletedTextGrade)
+  const currentTextAnswer = isMakeStep ? makeSentenceAnswer : typedAnswer
+  const submittedTextAnswer = isMakeStep ? submittedMakeSentenceAnswer : submittedTypedAnswer
+  const canSubmitTextAnswer =
+    (isFillStep || isMakeStep) &&
+    !checkAnswer.isPending &&
+    currentTextAnswer.trim().length > 0 &&
+    currentTextAnswer.trim() !== submittedTextAnswer
+  const isNextPracticeStepEnabled = canSubmitTextAnswer || canMoveToNextPracticeStep
 
   // 서버 문항이 내려오면 그것을 쓰고, 없을 때만 기존 데모 문항으로 폴백한다.
   const hasServerQuestions = serverPracticeQuestions.length > 0
@@ -1015,7 +1027,17 @@ function GrammarPracticePage({
     }
 
     const question = kind === 'fill' ? fillQuestion : makeQuestion
-    if (!question) return
+    if (!question) {
+      const correctAnswer = kind === 'fill' ? fillCorrectAnswer : makeCorrectAnswer
+      const grade: TextAnswerGrade = {
+        answer,
+        correct: normalizeAnswerText(answer) === normalizeAnswerText(correctAnswer),
+        correctAnswer,
+      }
+      if (kind === 'fill') setFillGrade(grade)
+      else setMakeGrade(grade)
+      return
+    }
 
     if (question.answer) {
       const grade: TextAnswerGrade = {
@@ -2541,8 +2563,13 @@ function GrammarPracticePage({
           <button
             type="button"
             className={`grammar-practice-next-button ${isFillStep || isMakeStep ? 'grammar-practice-next-button-fill' : ''}`}
-            disabled={!canMoveToNextPracticeStep}
+            disabled={!isNextPracticeStepEnabled}
             onClick={() => {
+              if (canSubmitTextAnswer) {
+                pushHistory()
+                void handleTextAnswerSubmit(isMakeStep ? 'make' : 'fill', currentTextAnswer)
+                return
+              }
               if (!canMoveToNextPracticeStep) return
               if (practiceStep === 'choice') {
                 pushHistory()
