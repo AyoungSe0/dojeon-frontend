@@ -456,8 +456,8 @@ function GrammarPracticePage({
   const [isListeningDragging, setIsListeningDragging] = useState(false)
 
   const [reviewDifficulty, setReviewDifficulty] = useState<ReviewDifficulty>('NORMAL')
-  const [reviewMarkComplete, setReviewMarkComplete] = useState<boolean | null>(null)
-  const [reviewSaveScrap, setReviewSaveScrap] = useState<boolean | null>(null)
+  const [reviewMarkComplete, setReviewMarkComplete] = useState<boolean | null>(true)
+  const [reviewSaveScrap, setReviewSaveScrap] = useState<boolean | null>(false)
 
   const trackedPageNumber =
     practiceStep === 'reading'
