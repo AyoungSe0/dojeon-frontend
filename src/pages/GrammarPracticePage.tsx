@@ -21,6 +21,7 @@ import {
 import type {
   DialogueLine,
   MaterialPracticeKind,
+  NextSection,
   SectionMaterial,
   SectionQuestion,
 } from '../types/section,types.ts'
@@ -49,6 +50,11 @@ interface GrammarPracticePageProps {
   language: string
   sectionId: number | null
   initialPracticeStep?: PracticeStep
+  /**
+   * 섹션을 완료 저장한 뒤, 진행도 API 가 알려준 다음 섹션으로 이동한다.
+   * nextSection 이 null 이면 코스의 마지막 섹션이라 수업 밖으로 나간다.
+   */
+  onOpenNextSection: (nextSection: NextSection | null) => void
 }
 
 interface PracticeStateSnapshot {
@@ -326,6 +332,7 @@ function GrammarPracticePage({
   language,
   sectionId,
   initialPracticeStep = 'choice',
+  onOpenNextSection,
 }: GrammarPracticePageProps) {
   const { data: questionsData, loading: questionsLoading } = useSectionQuestions(sectionId)
   const { data: materialsData } = useSectionMaterials(sectionId)
@@ -1041,37 +1048,45 @@ function GrammarPracticePage({
     return () => window.clearTimeout(feedbackTimer)
   }, [choiceFeedback])
 
-  const handleReviewSubmit = async (nextStep: 'next-grammar' | 'reading') => {
+  const handleReviewSubmit = async () => {
     if (reviewMarkComplete === null) return
 
-    if (sectionId !== null) {
-      try {
-        await saveProgress.mutateAsync({
-          sectionId,
-          payload: {
-            currentPage: 1,
-            stayTimeSeconds: 0,
-            isCompleted: reviewMarkComplete === true,
-            difficulty: reviewMarkComplete === true ? reviewDifficulty : undefined,
-          },
-        })
-      } catch {
-        return
-      }
-
-      if (reviewSaveScrap === true && grammarMaterialId !== null) {
-        await createScrap
-          .mutateAsync({
-            type: 'GRAMMAR',
-            materialId: grammarMaterialId,
-            sectionId,
-          } as never)
-          .catch(() => {})
-      }
+    // sectionId 가 없으면(데모/프리뷰) 서버 진행도가 없으므로 지금 섹션 안에서만 다음 화면으로 넘어간다.
+    if (sectionId === null) {
+      pushHistory()
+      setPracticeStep('next-grammar')
+      return
     }
 
-    pushHistory()
-    setPracticeStep(nextStep)
+    let nextSection: NextSection | null = null
+    try {
+      const result = await saveProgress.mutateAsync({
+        sectionId,
+        payload: {
+          currentPage: 1,
+          stayTimeSeconds: 0,
+          isCompleted: reviewMarkComplete === true,
+          difficulty: reviewMarkComplete === true ? reviewDifficulty : undefined,
+        },
+      })
+      nextSection = result?.nextSection ?? null
+    } catch {
+      return
+    }
+
+    if (reviewSaveScrap === true && grammarMaterialId !== null) {
+      await createScrap
+        .mutateAsync({
+          type: 'GRAMMAR',
+          materialId: grammarMaterialId,
+          sectionId,
+        } as never)
+        .catch(() => {})
+    }
+
+    // 다음 섹션 ID/타입은 서버가 정한다. 여기서 현재 sectionId 를 유지하면
+    // 방금 끝낸 섹션 자료를 다시 불러와 같은 화면이 반복된다.
+    onOpenNextSection(nextSection)
   }
 
   if (isFillIntroStep) {
@@ -1368,7 +1383,7 @@ function GrammarPracticePage({
                   saveProgress.isPending ||
                   createScrap.isPending
                 }
-                onClick={() => void handleReviewSubmit('next-grammar')}
+                onClick={() => void handleReviewSubmit()}
               >
                 {saveProgress.isPending || createScrap.isPending ? 'SAVING...' : 'CONTINUE'}
               </button>
