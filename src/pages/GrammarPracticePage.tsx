@@ -21,6 +21,7 @@ import {
 import type {
   DialogueLine,
   MaterialPracticeKind,
+  NextSection,
   SectionMaterial,
   SectionQuestion,
 } from '../types/section,types.ts'
@@ -42,10 +43,18 @@ export type PracticeStep =
   | 'next-grammar-rules'
 
 interface GrammarPracticePageProps {
+  /** 수업 내부 한 단계 뒤로. 되돌아갈 단계가 없으면 수업 밖으로 나간다. */
   onBack: () => void
+  /** 수업을 완전히 종료하고 수업 목록으로 나간다. */
+  onExit: () => void
   language: string
   sectionId: number | null
   initialPracticeStep?: PracticeStep
+  /**
+   * 섹션을 완료 저장한 뒤, 진행도 API 가 알려준 다음 섹션으로 이동한다.
+   * nextSection 이 null 이면 코스의 마지막 섹션이라 수업 밖으로 나간다.
+   */
+  onOpenNextSection: (nextSection: NextSection | null) => void
 }
 
 interface PracticeStateSnapshot {
@@ -321,9 +330,11 @@ const grammarPageByStep: Partial<Record<PracticeStep, number>> = {
 
 function GrammarPracticePage({
   onBack,
+  onExit,
   language,
   sectionId,
   initialPracticeStep = 'choice',
+  onOpenNextSection,
 }: GrammarPracticePageProps) {
   const { data: questionsData, loading: questionsLoading } = useSectionQuestions(sectionId)
   const { data: materialsData, loading: materialsLoading } = useSectionMaterials(sectionId)
@@ -943,6 +954,8 @@ function GrammarPracticePage({
       },
     ])
   }
+  // 하단 BACK 전용 핸들러: 수업 내부의 이전 단계로만 이동한다.
+  // 상단 화살표/닫기는 onExit으로 분리되어 항상 수업을 종료한다.
   const handleBackPress = () => {
     if (history.length > 0) {
       const previousSnapshot = history[history.length - 1]
@@ -1178,37 +1191,45 @@ function GrammarPracticePage({
     return () => window.clearTimeout(feedbackTimer)
   }, [choiceFeedback])
 
-  const handleReviewSubmit = async (nextStep: 'next-grammar' | 'reading') => {
+  const handleReviewSubmit = async () => {
     if (reviewMarkComplete === null) return
 
-    if (sectionId !== null) {
-      try {
-        await saveProgress.mutateAsync({
-          sectionId,
-          payload: {
-            currentPage: 1,
-            stayTimeSeconds: 0,
-            isCompleted: reviewMarkComplete === true,
-            difficulty: reviewMarkComplete === true ? reviewDifficulty : undefined,
-          },
-        })
-      } catch {
-        return
-      }
-
-      if (reviewSaveScrap === true && grammarMaterialId !== null) {
-        await createScrap
-          .mutateAsync({
-            type: 'GRAMMAR',
-            materialId: grammarMaterialId,
-            sectionId,
-          } as never)
-          .catch(() => {})
-      }
+    // sectionId 가 없으면(데모/프리뷰) 서버 진행도가 없으므로 지금 섹션 안에서만 다음 화면으로 넘어간다.
+    if (sectionId === null) {
+      pushHistory()
+      setPracticeStep('next-grammar')
+      return
     }
 
-    pushHistory()
-    setPracticeStep(nextStep)
+    let nextSection: NextSection | null = null
+    try {
+      const result = await saveProgress.mutateAsync({
+        sectionId,
+        payload: {
+          currentPage: 1,
+          stayTimeSeconds: 0,
+          isCompleted: reviewMarkComplete === true,
+          difficulty: reviewMarkComplete === true ? reviewDifficulty : undefined,
+        },
+      })
+      nextSection = result?.nextSection ?? null
+    } catch {
+      return
+    }
+
+    if (reviewSaveScrap === true && grammarMaterialId !== null) {
+      await createScrap
+        .mutateAsync({
+          type: 'GRAMMAR',
+          materialId: grammarMaterialId,
+          sectionId,
+        } as never)
+        .catch(() => {})
+    }
+
+    // 다음 섹션 ID/타입은 서버가 정한다. 여기서 현재 sectionId 를 유지하면
+    // 방금 끝낸 섹션 자료를 다시 불러와 같은 화면이 반복된다.
+    onOpenNextSection(nextSection)
   }
 
   if (isFillIntroStep) {
@@ -1218,8 +1239,8 @@ function GrammarPracticePage({
           <button
             type="button"
             className="grammar-practice-fill-intro-back"
-            onClick={handleBackPress}
-            aria-label="뒤로 가기"
+            onClick={onExit}
+            aria-label="수업 나가기"
           >
             <svg className="grammar-practice-fill-intro-back-icon" width="24" height="24" viewBox="0 0 24 24" fill="none" aria-hidden="true">
               <path d="M15 18L9 12L15 6" stroke="currentColor" strokeWidth="1" strokeLinecap="round" strokeLinejoin="round" />
@@ -1261,8 +1282,8 @@ function GrammarPracticePage({
           <button
             type="button"
             className="grammar-practice-make-intro-back"
-            onClick={handleBackPress}
-            aria-label="뒤로 가기"
+            onClick={onExit}
+            aria-label="수업 나가기"
           >
             <svg className="grammar-practice-make-intro-back-icon" width="24" height="24" viewBox="0 0 24 24" fill="none" aria-hidden="true">
               <path d="M15 18L9 12L15 6" stroke="currentColor" strokeWidth="1" strokeLinecap="round" strokeLinejoin="round" />
@@ -1302,7 +1323,7 @@ function GrammarPracticePage({
       <section className={`grammar-practice-content grammar-practice-content-${practiceStep}`}>
         {isReviewStep ? (
           <header className="grammar-practice-header grammar-practice-header-review">
-            <button type="button" className="grammar-practice-close" onClick={onBack} aria-label="닫기">
+            <button type="button" className="grammar-practice-close" onClick={onExit} aria-label="수업 나가기">
               <svg className="grammar-practice-close-icon" width="30" height="30" viewBox="0 0 30 30" fill="none" aria-hidden="true">
                 <path d="M21 9L9 21M9 9L21 21" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" />
               </svg>
@@ -1311,7 +1332,7 @@ function GrammarPracticePage({
           </header>
         ) : (
           <header className="grammar-practice-header">
-            <button type="button" className="grammar-practice-back" onClick={handleBackPress} aria-label="뒤로 가기">
+            <button type="button" className="grammar-practice-back" onClick={onExit} aria-label="수업 나가기">
               <svg className="grammar-practice-back-icon" width="24" height="24" viewBox="0 0 24 24" fill="none" aria-hidden="true">
                 <path d="M15 18L9 12L15 6" stroke="currentColor" strokeWidth="1" strokeLinecap="round" strokeLinejoin="round" />
               </svg>
@@ -1505,7 +1526,7 @@ function GrammarPracticePage({
                   saveProgress.isPending ||
                   createScrap.isPending
                 }
-                onClick={() => void handleReviewSubmit('next-grammar')}
+                onClick={() => void handleReviewSubmit()}
               >
                 {saveProgress.isPending || createScrap.isPending ? 'SAVING...' : 'CONTINUE'}
               </button>

@@ -17,7 +17,10 @@ interface VocabularyLessonPageProps {
   sectionId: number | null
   initialView?: VocabularyLessonView
   initialCardIndex?: number
+  /** 수업 내부 한 단계 뒤로. 되돌아갈 단계가 없으면 수업 밖으로 나간다. */
   onBack: () => void
+  /** 수업을 완전히 종료하고 수업 목록으로 나간다. */
+  onExit: () => void
   onOpenNextGrammar: (sectionId?: number | null) => void
 }
 
@@ -62,6 +65,7 @@ function VocabularyLessonPage({
   initialView = 'intro',
   initialCardIndex = 0,
   onBack,
+  onExit,
   onOpenNextGrammar,
 }: VocabularyLessonPageProps) {
   const contentLanguage = toContentLanguage(language)
@@ -156,6 +160,8 @@ function VocabularyLessonPage({
     window.speechSynthesis.speak(utterance)
   }
 
+  // 하단 BACK 전용 핸들러: 수업 내부의 이전 단계로만 이동한다.
+  // 상단 화살표는 onExit으로 분리되어 항상 수업을 종료한다.
   const handleBackPress = () => {
     if (view === 'flashcards') {
       setView('card')
@@ -390,8 +396,8 @@ function VocabularyLessonPage({
           <button
             type="button"
             className="vocabulary-lesson-back"
-            onClick={handleBackPress}
-            aria-label="Go back"
+            onClick={onExit}
+            aria-label="Exit lesson"
           >
             <svg
               className="vocabulary-lesson-back-icon"
@@ -450,6 +456,13 @@ function VocabularyLessonPage({
             <p className="vocabulary-lesson-flashcards-copy">
               Tap cards and quiz yourself with the words from this lesson.
             </p>
+            <button
+              type="button"
+              className="vocabulary-lesson-flashcards-back-button"
+              onClick={handleBackPress}
+            >
+              BACK
+            </button>
           </section>
         ) : cardsLoading ? (
           <section className="vocabulary-lesson-study">

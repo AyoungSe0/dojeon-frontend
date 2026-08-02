@@ -569,32 +569,36 @@ function App() {
     changeUserPassword.reset()
   }, [changeUserPassword, updateUserMe])
 
+  /** 섹션 화면을 연다. 알 수 없는 타입이면 아무것도 열지 않고 false 를 돌려준다. */
   const handleOpenSection = (
     sectionId: number,
     sectionType: string,
-    backScreen: 'class' | 'lesson-detail',
+    backScreen: 'home' | 'class' | 'lesson-detail',
   ) => {
-    if (sectionType === 'VOCAB') {
+    const normalizedType = sectionType.toUpperCase()
+
+    if (normalizedType === 'VOCAB' || normalizedType === 'VOCABULARY') {
       setSelectedSectionId(sectionId)
-      setVocabularyLessonBackScreen(backScreen)
+      setVocabularyLessonBackScreen(backScreen === 'home' ? 'class' : backScreen)
       setScreen('vocabulary-lesson')
-      return
+      return true
     }
 
-    if (sectionType === 'GRAMMAR') {
+    if (normalizedType === 'GRAMMAR') {
       setGrammarPracticeInitialStep('next-grammar')
-    } else if (sectionType === 'READING') {
+    } else if (normalizedType === 'READING') {
       setGrammarPracticeInitialStep('reading')
-    } else if (sectionType === 'LISTENING') {
+    } else if (normalizedType === 'LISTENING') {
       setGrammarPracticeInitialStep('listening')
     } else {
       console.warn(`Unsupported section type: ${sectionType}`)
-      return
+      return false
     }
 
     setSelectedSectionId(sectionId)
     setGrammarPracticeBackScreen(backScreen)
     setScreen('grammar-practice')
+    return true
   }
 
   return (
@@ -943,6 +947,9 @@ function App() {
           onBack={() => {
             setScreen(vocabularyLessonBackScreen)
           }}
+          onExit={() => {
+            setScreen('class')
+          }}
           onOpenNextGrammar={(nextSectionId) => {
             if (nextSectionId === null) {
               setSelectedSectionId(null)
@@ -1010,11 +1017,26 @@ function App() {
         />
       ) : visibleScreen === 'grammar-practice' ? (
         <GrammarPracticePage
+          // 섹션이 바뀌면 새로 마운트해서 initialPracticeStep 과 내부 진행 상태를 처음부터 다시 잡는다.
+          key={`grammar-practice-${selectedSectionId ?? 'none'}`}
           initialPracticeStep={grammarPracticeInitialStep}
           language={language}
           sectionId={selectedSectionId!}
           onBack={() => {
             setScreen(grammarPracticeBackScreen)
+          }}
+          onExit={() => {
+            setScreen('class')
+          }}
+          onOpenNextSection={(nextSection) => {
+            // 마지막 섹션이거나 아직 지원하지 않는 타입이면 수업 목록으로 돌아간다.
+            if (
+              !nextSection ||
+              !handleOpenSection(nextSection.sectionId, nextSection.type, grammarPracticeBackScreen)
+            ) {
+              setSelectedSectionId(null)
+              setScreen(grammarPracticeBackScreen)
+            }
           }}
         />
       ) : (
