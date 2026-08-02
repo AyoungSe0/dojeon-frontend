@@ -42,7 +42,10 @@ export type PracticeStep =
   | 'next-grammar-rules'
 
 interface GrammarPracticePageProps {
+  /** 수업 내부 한 단계 뒤로. 되돌아갈 단계가 없으면 수업 밖으로 나간다. */
   onBack: () => void
+  /** 수업을 완전히 종료하고 수업 목록으로 나간다. */
+  onExit: () => void
   language: string
   sectionId: number | null
   initialPracticeStep?: PracticeStep
@@ -319,6 +322,7 @@ const grammarPageByStep: Partial<Record<PracticeStep, number>> = {
 
 function GrammarPracticePage({
   onBack,
+  onExit,
   language,
   sectionId,
   initialPracticeStep = 'choice',
@@ -876,6 +880,8 @@ function GrammarPracticePage({
       },
     ])
   }
+  // 하단 BACK 전용 핸들러: 수업 내부의 이전 단계로만 이동한다.
+  // 상단 화살표/닫기는 onExit으로 분리되어 항상 수업을 종료한다.
   const handleBackPress = () => {
     if (history.length > 0) {
       const previousSnapshot = history[history.length - 1]
@@ -1075,8 +1081,8 @@ function GrammarPracticePage({
           <button
             type="button"
             className="grammar-practice-fill-intro-back"
-            onClick={handleBackPress}
-            aria-label="뒤로 가기"
+            onClick={onExit}
+            aria-label="수업 나가기"
           >
             <svg className="grammar-practice-fill-intro-back-icon" width="24" height="24" viewBox="0 0 24 24" fill="none" aria-hidden="true">
               <path d="M15 18L9 12L15 6" stroke="currentColor" strokeWidth="1" strokeLinecap="round" strokeLinejoin="round" />
@@ -1118,8 +1124,8 @@ function GrammarPracticePage({
           <button
             type="button"
             className="grammar-practice-make-intro-back"
-            onClick={handleBackPress}
-            aria-label="뒤로 가기"
+            onClick={onExit}
+            aria-label="수업 나가기"
           >
             <svg className="grammar-practice-make-intro-back-icon" width="24" height="24" viewBox="0 0 24 24" fill="none" aria-hidden="true">
               <path d="M15 18L9 12L15 6" stroke="currentColor" strokeWidth="1" strokeLinecap="round" strokeLinejoin="round" />
@@ -1159,7 +1165,7 @@ function GrammarPracticePage({
       <section className={`grammar-practice-content grammar-practice-content-${practiceStep}`}>
         {isReviewStep ? (
           <header className="grammar-practice-header grammar-practice-header-review">
-            <button type="button" className="grammar-practice-close" onClick={onBack} aria-label="닫기">
+            <button type="button" className="grammar-practice-close" onClick={onExit} aria-label="수업 나가기">
               <svg className="grammar-practice-close-icon" width="30" height="30" viewBox="0 0 30 30" fill="none" aria-hidden="true">
                 <path d="M21 9L9 21M9 9L21 21" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" />
               </svg>
@@ -1168,7 +1174,7 @@ function GrammarPracticePage({
           </header>
         ) : (
           <header className="grammar-practice-header">
-            <button type="button" className="grammar-practice-back" onClick={handleBackPress} aria-label="뒤로 가기">
+            <button type="button" className="grammar-practice-back" onClick={onExit} aria-label="수업 나가기">
               <svg className="grammar-practice-back-icon" width="24" height="24" viewBox="0 0 24 24" fill="none" aria-hidden="true">
                 <path d="M15 18L9 12L15 6" stroke="currentColor" strokeWidth="1" strokeLinecap="round" strokeLinejoin="round" />
               </svg>

@@ -933,6 +933,9 @@ function App() {
           onBack={() => {
             setScreen(vocabularyLessonBackScreen)
           }}
+          onExit={() => {
+            setScreen('class')
+          }}
           onOpenNextGrammar={(nextSectionId) => {
             if (nextSectionId === null) {
               setSelectedSectionId(null)
@@ -992,6 +995,9 @@ function App() {
           sectionId={selectedSectionId!}
           onBack={() => {
             setScreen(grammarPracticeBackScreen)
+          }}
+          onExit={() => {
+            setScreen('class')
           }}
         />
       ) : (
