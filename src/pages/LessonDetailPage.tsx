@@ -497,11 +497,7 @@ function LessonDetailPage({
                       ? 'lesson-detail-module-card-selected'
                       : ''
                   } ${isCompleted ? 'lesson-detail-module-card-completed' : ''}`}
-                  onClick={() => {
-                    setSelectedModuleId((current) =>
-                      current === section.sectionId ? null : section.sectionId,
-                    )
-                  }}
+                  onClick={() => setSelectedModuleId(section.sectionId)}
                 >
                   <h3 className="lesson-detail-module-title">{section.type}</h3>
                   <span className="lesson-detail-module-progress">

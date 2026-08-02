@@ -10,7 +10,6 @@ import settingIcon from '../assets/setting_icon.svg'
 import starIcon from '../assets/star.svg'
 import { defaultProfileImageSrc } from '../data/profileImages.ts'
 import { useUserMe } from '../hooks/useUserMe.ts'
-import SubscriptionBottomSheet from '../components/SubscriptionBottomSheet'
 import ProfileImageBottomSheet from '../components/ProfileImageBottomSheet'
 import type { UserMeData } from '../types/user.types.ts'
 import { isUnauthorizedError } from '../services/apiError.ts'
@@ -241,6 +240,7 @@ interface ProfileMainPageProps {
   onOpenNotebook: () => void
   onOpenSetting: () => void
   onOpenAchievements: () => void
+  onOpenSubscription: () => void
   onUnauthorized: () => void
 }
 
@@ -269,10 +269,10 @@ function ProfileMainPage({
   onOpenNotebook,
   onOpenSetting,
   onOpenAchievements,
+  onOpenSubscription,
   onUnauthorized,
 }: ProfileMainPageProps) {
   const { data: userMeData, loading, error, refetch } = useUserMe()
-  const [isSubscriptionSheetOpen, setIsSubscriptionSheetOpen] = useState(false)
   const [isProfileImageSheetOpen, setIsProfileImageSheetOpen] = useState(false)
   const isUnauthorized = isUnauthorizedError(error)
 
@@ -517,7 +517,7 @@ function ProfileMainPage({
             <button
               type="button"
               className="profile-main-subscribe-button"
-              onClick={() => setIsSubscriptionSheetOpen(true)}
+              onClick={onOpenSubscription}
             >
               {user.subscriptionTier === 'FREE' ? 'Upgrade' : 'Manage'}
             </button>
@@ -556,14 +556,6 @@ function ProfileMainPage({
           </button>
         ))}
       </nav>
-      {isSubscriptionSheetOpen ? (
-        <SubscriptionBottomSheet
-          currentSubscriptionPlanId={user.subscriptionPlanId}
-          currentSubscriptionTier={user.subscriptionTier}
-          onClose={() => setIsSubscriptionSheetOpen(false)}
-          onUnauthorized={onUnauthorized}
-        />
-      ) : null}
       {isProfileImageSheetOpen ? (
         <ProfileImageBottomSheet
           currentImageUrl={user.profileImgUrl}

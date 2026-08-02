@@ -1,4 +1,4 @@
-import { useMemo, useRef, useState } from 'react'
+import { type PointerEvent, useMemo, useRef, useState } from 'react'
 import characterImage from '../assets/character.png'
 import './VocabularyLessonPage.css'
 import { useSectionCards } from '../hooks/useSectionCards.ts'
@@ -84,7 +84,8 @@ function VocabularyLessonPage({
   const [pendingScrapWordIds, setPendingScrapWordIds] = useState<number[]>([])
   const [personalListPrompt, setPersonalListPrompt] = useState<PersonalListPrompt | null>(null)
   const [expandedTableWordIds, setExpandedTableWordIds] = useState<number[]>([])
-  const pointerStartXRef = useRef<number | null>(null)
+  const pointerStartRef = useRef<{ pointerId: number; clientX: number } | null>(null)
+  const shouldIgnoreCardClickRef = useRef(false)
 
   // Base scrap state derived directly from API data (no useEffect)
   const baseScrapedIds = useMemo(
@@ -242,16 +243,40 @@ function VocabularyLessonPage({
     )
   }
 
-  const handlePointerDown = (clientX: number) => {
-    pointerStartXRef.current = clientX
+  const handlePointerDown = (event: PointerEvent<HTMLElement>) => {
+    if (!event.isPrimary) return
+
+    pointerStartRef.current = { pointerId: event.pointerId, clientX: event.clientX }
+    event.currentTarget.setPointerCapture(event.pointerId)
   }
 
-  const handlePointerUp = (clientX: number) => {
-    if (pointerStartXRef.current === null) return
-    const deltaX = clientX - pointerStartXRef.current
-    pointerStartXRef.current = null
+  const handlePointerUp = (event: PointerEvent<HTMLElement>) => {
+    const pointerStart = pointerStartRef.current
+    if (!pointerStart || pointerStart.pointerId !== event.pointerId) return
+
+    const deltaX = event.clientX - pointerStart.clientX
+    pointerStartRef.current = null
+    if (event.currentTarget.hasPointerCapture(event.pointerId)) {
+      event.currentTarget.releasePointerCapture(event.pointerId)
+    }
+
+    if (Math.abs(deltaX) < swipeThreshold) return
+
+    shouldIgnoreCardClickRef.current = true
+    window.setTimeout(() => {
+      shouldIgnoreCardClickRef.current = false
+    }, 0)
     if (deltaX <= -swipeThreshold) moveCard('next')
     if (deltaX >= swipeThreshold) moveCard('prev')
+  }
+
+  const handleCurrentCardClick = (wordId: number) => {
+    if (shouldIgnoreCardClickRef.current) {
+      shouldIgnoreCardClickRef.current = false
+      return
+    }
+
+    toggleFlip(wordId)
   }
 
   const handleOpenNextGrammar = async () => {
@@ -460,10 +485,10 @@ function VocabularyLessonPage({
                 <section
                   className="vocabulary-lesson-carousel"
                   aria-label="Vocabulary cards"
-                  onPointerDown={(event) => handlePointerDown(event.clientX)}
-                  onPointerUp={(event) => handlePointerUp(event.clientX)}
+                  onPointerDown={handlePointerDown}
+                  onPointerUp={handlePointerUp}
                   onPointerCancel={() => {
-                    pointerStartXRef.current = null
+                    pointerStartRef.current = null
                   }}
                 >
                   <div
@@ -494,7 +519,7 @@ function VocabularyLessonPage({
                               ? 'vocabulary-lesson-card-shell-current'
                               : 'vocabulary-lesson-card-shell-side'
                           }`}
-                          onClick={isCurrent ? () => toggleFlip(entry.item.id) : undefined}
+                          onClick={isCurrent ? () => handleCurrentCardClick(entry.item.id) : undefined}
                         >
                           {isCurrent ? (
                             <>

@@ -9,6 +9,7 @@ import VerifySuccessPage from './pages/VerifySuccessPage'
 import OnboardingPage from './pages/OnboardingPage'
 import HomePage from './pages/HomePage'
 import PracticePage from './pages/PracticePage'
+import CustomizePracticePage from './pages/CustomizePracticePage'
 import GrammarPracticePage, { type PracticeStep } from './pages/GrammarPracticePage'
 import ClassPage from './pages/ClassPage'
 import SettingPage from './pages/SettingPage'
@@ -21,6 +22,7 @@ import LessonDetailPage from './pages/LessonDetailPage'
 import VocabularyLessonPage from './pages/VocabularyLessonPage'
 import ProfileMainPage from './pages/ProfileMainPage'
 import ProfileAchievementsPage from './pages/ProfileAchievementsPage'
+import SubscriptionPage from './pages/SubscriptionPage'
 import type { PatchUserRequest } from './types/user.types'
 import { isUnauthorizedError } from './services/apiError'
 import { useChangeUserPassword } from './hooks/useChangeUserPassword.ts'
@@ -168,9 +170,9 @@ const isBirthdayValue = (value: string) => /^\d{4}[-.]\d{2}[-.]\d{2}$/.test(valu
 
 type Screen =
   | 'splash' | 'login' | 'signup' | 'verify-email' | 'verify-success'
-  | 'onboarding' | 'home' | 'class' | 'practice' | 'grammar-practice' | 'setting'
+  | 'onboarding' | 'home' | 'class' | 'practice' | 'customize-practice' | 'grammar-practice' | 'setting'
   | 'account-info' | 'preferences' | 'notebook' | 'vocabulary' | 'notebook-grammar'
-  | 'lesson-detail' | 'vocabulary-lesson' | 'profile-main' | 'profile-achievements'
+  | 'lesson-detail' | 'vocabulary-lesson' | 'profile-main' | 'profile-achievements' | 'subscription'
 
 const devPreviewScreens = new Set<Screen>([
   'splash',
@@ -182,6 +184,7 @@ const devPreviewScreens = new Set<Screen>([
   'home',
   'class',
   'practice',
+  'customize-practice',
   'grammar-practice',
   'setting',
   'account-info',
@@ -193,6 +196,7 @@ const devPreviewScreens = new Set<Screen>([
   'vocabulary-lesson',
   'profile-main',
   'profile-achievements',
+  'subscription',
 ])
 
 const devPreviewPracticeSteps = new Set<PracticeStep>([
@@ -777,6 +781,12 @@ function App() {
             setScreen('profile-main')
           }}
         />
+      ) : visibleScreen === 'customize-practice' ? (
+        <CustomizePracticePage
+          onBack={() => {
+            setScreen('practice')
+          }}
+        />
       ) : visibleScreen === 'setting' ? (
         <SettingPage
           onBack={() => {
@@ -982,6 +992,19 @@ function App() {
           }}
           onOpenAchievements={() => {
             setScreen('profile-achievements')
+          }}
+          onOpenSubscription={() => {
+            setScreen('subscription')
+          }}
+          onUnauthorized={handleUnauthorized}
+        />
+      ) : visibleScreen === 'subscription' ? (
+        <SubscriptionPage
+          currentSubscriptionPlanId={userMeData?.profile.subscriptionPlanId ?? null}
+          currentSubscriptionTier={userMeData?.profile.subscriptionTier ?? 'FREE'}
+          subscriptionExpiresAt={userMeData?.profile.subscriptionExpiresAt ?? null}
+          onClose={() => {
+            setScreen('profile-main')
           }}
           onUnauthorized={handleUnauthorized}
         />
