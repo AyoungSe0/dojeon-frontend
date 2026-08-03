@@ -186,7 +186,7 @@
   width: min(390px, 100%);
   min-height: calc(84px + env(safe-area-inset-bottom));
   padding: 16px 24px calc(16px + env(safe-area-inset-bottom));
-  background: var(--dojeon-color-surface);
+  background: transparent;
   box-sizing: border-box;
   display: grid;
   grid-template-rows: auto 52px;
@@ -345,12 +345,12 @@
 
 .word-practice-next {
   position: relative;
+  grid-row: 2;
   z-index: 4;
 }
 
 .word-practice-next:disabled {
-  background: var(--dojeon-color-primary-action);
-  opacity: 1;
+  background: var(--dojeon-color-gray-300);
   cursor: not-allowed;
 }
 
