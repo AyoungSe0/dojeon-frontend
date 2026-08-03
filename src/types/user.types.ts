@@ -116,13 +116,17 @@ export interface PatchUserResponse {
   timestamp: string
 }
 
-export interface ChangePasswordPayload {
-  newPassword: string
-}
+export type ChangePasswordPayload =
+  | { currentPassword: string; newPassword: string }
+  | { googleIdToken: string; newPassword: string }
 
 export interface ChangePasswordData {
   updated: boolean
 }
+
+export type DeleteUserMePayload =
+  | { currentPassword: string }
+  | { googleIdToken: string }
 
 export interface DeleteUserMeData {
   deleted: boolean
@@ -131,6 +135,7 @@ export interface DeleteUserMeData {
 export interface PresignedProfileImagePayload {
   contentType: string
   fileExtension: 'jpg' | 'jpeg' | 'png' | 'webp'
+  fileSizeBytes: number
 }
 
 export interface PresignedProfileImageResult {

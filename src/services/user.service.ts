@@ -4,6 +4,7 @@ import type {
   ChangePasswordData,
   ChangePasswordPayload,
   DeleteUserMeData,
+  DeleteUserMePayload,
   PatchUserData,
   PatchUserRequest,
   PatchUserResponse,
@@ -195,10 +196,15 @@ export async function patchUserMe(payload: PatchUserRequest): Promise<PatchUserD
   return body?.data ?? null
 }
 
-export async function deleteUserMe(): Promise<DeleteUserMeData | null> {
+export async function deleteUserMe(
+  payload: DeleteUserMePayload,
+): Promise<DeleteUserMeData | null> {
   return requestUserApi<DeleteUserMeData>(
     '/user/me',
-    { method: 'DELETE' },
+    {
+      method: 'DELETE',
+      body: JSON.stringify(payload),
+    },
     'Failed to delete profile',
   )
 }
@@ -225,6 +231,8 @@ export async function fetchUserAchievements(
     'Failed to fetch achievements',
   )
 }
+
+export const MAX_PROFILE_IMAGE_SIZE_BYTES = 5 * 1024 * 1024
 
 export async function createProfileImagePresignedUrl(
   payload: PresignedProfileImagePayload,
