@@ -21,6 +21,7 @@ interface VocabularyLessonPageProps {
   onBack: () => void
   /** 수업을 완전히 종료하고 수업 목록으로 나간다. */
   onExit: () => void
+  onOpenFlashcardPractice: () => void
   onOpenNextGrammar: (sectionId?: number | null) => void
 }
 
@@ -66,6 +67,7 @@ function VocabularyLessonPage({
   initialCardIndex = 0,
   onBack,
   onExit,
+  onOpenFlashcardPractice,
   onOpenNextGrammar,
 }: VocabularyLessonPageProps) {
   const contentLanguage = toContentLanguage(language)
@@ -446,6 +448,7 @@ function VocabularyLessonPage({
           </section>
         ) : view === 'flashcards' ? (
           <section className="vocabulary-lesson-flashcards">
+            {/* 기존 flashcards UI 시작 */}
             <article className="vocabulary-lesson-flashcards-card">
               <p className="vocabulary-lesson-flashcards-label">Flashcards game</p>
               <h2 className="vocabulary-lesson-flashcards-word">{currentCard?.word ?? ''}</h2>
@@ -463,6 +466,7 @@ function VocabularyLessonPage({
             >
               BACK
             </button>
+            {/* 기존 flashcards UI 끝 */}
           </section>
         ) : cardsLoading ? (
           <section className="vocabulary-lesson-study">
@@ -741,7 +745,7 @@ function VocabularyLessonPage({
               <button
                 type="button"
                 className="vocabulary-lesson-flashcard-button"
-                onClick={() => setView('flashcards')}
+                onClick={onOpenFlashcardPractice}
               >
                 to flashcard practice
               </button>

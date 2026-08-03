@@ -2,12 +2,13 @@ import { useState, type KeyboardEvent } from 'react'
 import './CustomizePracticePage.css'
 
 interface CustomizePracticePageProps {
-  onBack: () => void
+  onExit: () => void
+  onNext: (questionCount: number, languageDirection: LanguageDirection) => void
 }
 
 const questionCounts = [5, 10, 15, 20] as const
 
-type LanguageDirection = 'english-to-korean' | 'korean-to-english'
+export type LanguageDirection = 'english-to-korean' | 'korean-to-english'
 
 const languageDirections = [
   { value: 'english-to-korean', from: 'English', to: 'Korean' },
@@ -56,7 +57,10 @@ const moveRadioSelection = <T,>(
   optionButtons?.[nextIndex]?.focus()
 }
 
-function CustomizePracticePage({ onBack }: CustomizePracticePageProps) {
+function CustomizePracticePage({
+  onExit,
+  onNext,
+}: CustomizePracticePageProps) {
   const [selectedQuestionCount, setSelectedQuestionCount] = useState<number | null>(null)
   const [selectedLanguageDirection, setSelectedLanguageDirection] =
     useState<LanguageDirection | null>(null)
@@ -68,8 +72,8 @@ function CustomizePracticePage({ onBack }: CustomizePracticePageProps) {
           <button
             type="button"
             className="customize-practice-back"
-            onClick={onBack}
-            aria-label="Go back"
+            onClick={onExit}
+            aria-label="Exit lesson"
           >
             <svg
               className="customize-practice-back-icon"
@@ -190,7 +194,16 @@ function CustomizePracticePage({ onBack }: CustomizePracticePageProps) {
           </section>
         </div>
 
-        <button type="button" className="customize-practice-next-button">
+        <button
+          type="button"
+          className="customize-practice-next-button"
+          disabled={!selectedQuestionCount || !selectedLanguageDirection}
+          onClick={() => {
+            if (selectedQuestionCount && selectedLanguageDirection) {
+              onNext(selectedQuestionCount, selectedLanguageDirection)
+            }
+          }}
+        >
           NEXT
         </button>
       </section>
