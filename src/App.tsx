@@ -389,10 +389,14 @@ function App() {
     isUnauthorizedError(userMeError)
   const isSettingScreen =
     screen === 'setting' || screen === 'account-info' || screen === 'preferences'
+  // 비밀번호 변경의 401은 현재 비밀번호 오류일 수 있다. 세션이 아직 살아 있으면
+  // (리프레시 실패 시 저장된 세션이 지워짐) 로그아웃 대신 입력 오류로 처리한다.
+  const isCurrentPasswordRejected =
+    isUnauthorizedError(changeUserPassword.error) && Boolean(getStoredAuthSession())
   const settingUnauthorizedError = [
     userMeError,
     updateUserMe.error,
-    changeUserPassword.error,
+    isCurrentPasswordRejected ? null : changeUserPassword.error,
   ].find(isUnauthorizedError)
   const visibleScreen = screen === 'splash' && minSplashElapsed && !authSession ? 'login' : screen
 
@@ -906,9 +910,12 @@ function App() {
           }}
           isSaving={updateUserMe.isPending || changeUserPassword.isPending}
           saveError={
-            isUnauthorizedError(updateUserMe.error) || isUnauthorizedError(changeUserPassword.error)
-              ? null
-              : updateUserMe.error?.message ?? changeUserPassword.error?.message ?? null
+            isCurrentPasswordRejected
+              ? 'The current password is incorrect.'
+              : isUnauthorizedError(updateUserMe.error) ||
+                  isUnauthorizedError(changeUserPassword.error)
+                ? null
+                : updateUserMe.error?.message ?? changeUserPassword.error?.message ?? null
           }
           onClearSaveError={clearAccountInfoSaveError}
           onBack={() => {

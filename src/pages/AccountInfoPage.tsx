@@ -18,6 +18,7 @@ interface AccountInfoPageProps {
     ageGroup?: string
     birthday?: string
     passwordChange?: {
+      currentPassword: string
       newPassword: string
     }
   }) => void | Promise<void>
@@ -63,6 +64,7 @@ function AccountInfoPage({
   const [editTextValue, setEditTextValue] = useState('')
   const [editAgeGroup, setEditAgeGroup] = useState('')
   const [editBirthday, setEditBirthday] = useState('')
+  const [currentPassword, setCurrentPassword] = useState('')
   const [newPassword, setNewPassword] = useState('')
   const [passwordMessage, setPasswordMessage] = useState('')
   const [activeEditField, setActiveEditField] = useState<EditableAccountField | null>(null)
@@ -103,7 +105,8 @@ function AccountInfoPage({
       isSatisfied: /[0-9]/.test(newPassword),
     },
   ]
-  const isPasswordChangeReady = newPassword.trim().length > 0
+  const isPasswordChangeReady =
+    currentPassword.trim().length > 0 && newPassword.trim().length > 0
   const isPasswordRulesValid = passwordRules.every((rule) => rule.isSatisfied)
   const isAnySheetOpen = activeEditField !== null || isDeleteSheetOpen
   const displayedAgeGroupOrBirthday = [ageGroup, formatBirthdayForDisplay(birthday)]
@@ -134,6 +137,7 @@ function AccountInfoPage({
     setEditTextValue('')
     setEditAgeGroup('')
     setEditBirthday('')
+    setCurrentPassword('')
     setNewPassword('')
     setPasswordMessage('')
     onClearSaveError?.()
@@ -146,29 +150,21 @@ function AccountInfoPage({
 
   const openEditSheet = (field: EditableAccountField) => {
     onClearSaveError?.()
+    setCurrentPassword('')
+    setNewPassword('')
+    setPasswordMessage('')
 
     if (field === 'nickname') {
       setEditTextValue(nickname)
-      setNewPassword('')
-      setPasswordMessage('')
     }
 
     if (field === 'phoneNumber') {
       setEditTextValue(phoneNumber)
-      setNewPassword('')
-      setPasswordMessage('')
     }
 
     if (field === 'ageGroupOrBirthday') {
       setEditAgeGroup(ageGroup)
       setEditBirthday(formatBirthdayForDisplay(birthday))
-      setNewPassword('')
-      setPasswordMessage('')
-    }
-
-    if (field === 'password') {
-      setNewPassword('')
-      setPasswordMessage('')
     }
 
     setActiveEditField(field)
@@ -178,7 +174,7 @@ function AccountInfoPage({
     if (isEditSaveDisabled) return
 
     if (activeEditField === 'password' && !isPasswordChangeReady) {
-      setPasswordMessage('Enter a new password.')
+      setPasswordMessage('Enter your current and new password.')
       return
     }
 
@@ -195,10 +191,12 @@ function AccountInfoPage({
         birthday: activeEditField === 'ageGroupOrBirthday' ? editBirthday : undefined,
         passwordChange: isPasswordChangeReady
           ? {
+              currentPassword: currentPassword.trim(),
               newPassword: newPassword.trim(),
             }
           : undefined,
       })
+      setCurrentPassword('')
       setNewPassword('')
       setPasswordMessage('')
       closeSheet()
@@ -451,13 +449,23 @@ function AccountInfoPage({
                     <input
                       type="password"
                       className="account-info-sheet-input"
+                      value={currentPassword}
+                      onChange={(event) => {
+                        setCurrentPassword(event.target.value)
+                        setPasswordMessage('')
+                      }}
+                      placeholder="Current password"
+                      ref={initialSheetFocusRef}
+                    />
+                    <input
+                      type="password"
+                      className="account-info-sheet-input"
                       value={newPassword}
                       onChange={(event) => {
                         setNewPassword(event.target.value)
                         setPasswordMessage('')
                       }}
                       placeholder="New password"
-                      ref={initialSheetFocusRef}
                     />
                     <ul className="account-info-password-requirements" aria-label="Password rules">
                       {passwordRules.map((rule) => (
