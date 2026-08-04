@@ -9,7 +9,8 @@ import VerifySuccessPage from './pages/VerifySuccessPage'
 import OnboardingPage from './pages/OnboardingPage'
 import HomePage from './pages/HomePage'
 import PracticePage from './pages/PracticePage'
-import CustomizePracticePage from './pages/CustomizePracticePage'
+import CustomizePracticePage, { type LanguageDirection } from './pages/CustomizePracticePage'
+import WordPracticePage from './pages/WordPracticePage'
 import GrammarPracticePage, { type PracticeStep } from './pages/GrammarPracticePage'
 import ClassPage from './pages/ClassPage'
 import SettingPage from './pages/SettingPage'
@@ -170,7 +171,7 @@ const isBirthdayValue = (value: string) => /^\d{4}[-.]\d{2}[-.]\d{2}$/.test(valu
 
 type Screen =
   | 'splash' | 'login' | 'signup' | 'verify-email' | 'verify-success'
-  | 'onboarding' | 'home' | 'class' | 'practice' | 'customize-practice' | 'grammar-practice' | 'setting'
+  | 'onboarding' | 'home' | 'class' | 'practice' | 'customize-practice' | 'word-practice' | 'grammar-practice' | 'setting'
   | 'account-info' | 'preferences' | 'notebook' | 'vocabulary' | 'notebook-grammar'
   | 'lesson-detail' | 'vocabulary-lesson' | 'profile-main' | 'profile-achievements' | 'subscription'
 
@@ -185,6 +186,7 @@ const devPreviewScreens = new Set<Screen>([
   'class',
   'practice',
   'customize-practice',
+  'word-practice',
   'grammar-practice',
   'setting',
   'account-info',
@@ -324,6 +326,14 @@ function App() {
   >(
     'class',
   )
+  const [vocabularyLessonInitialView, setVocabularyLessonInitialView] = useState<
+    'intro' | 'card' | 'flashcards'
+  >('intro')
+  const [wordPracticeSettings, setWordPracticeSettings] = useState<{
+    questionCount: number
+    languageDirection: LanguageDirection
+    sessionSeed: string
+  } | null>(null)
   const [settingBackScreen, setSettingBackScreen] = useState<'home' | 'profile-main'>('home')
   const {
     data: userMeData,
@@ -579,6 +589,7 @@ function App() {
 
     if (normalizedType === 'VOCAB' || normalizedType === 'VOCABULARY') {
       setSelectedSectionId(sectionId)
+      setVocabularyLessonInitialView('intro')
       setVocabularyLessonBackScreen(backScreen === 'home' ? 'class' : backScreen)
       setScreen('vocabulary-lesson')
       return true
@@ -783,8 +794,33 @@ function App() {
         />
       ) : visibleScreen === 'customize-practice' ? (
         <CustomizePracticePage
+          onExit={() => {
+            setScreen('class')
+          }}
+          onNext={(questionCount, languageDirection) => {
+            setWordPracticeSettings({
+              questionCount,
+              languageDirection,
+              sessionSeed: crypto.randomUUID(),
+            })
+            setScreen('word-practice')
+          }}
+        />
+      ) : visibleScreen === 'word-practice' ? (
+        <WordPracticePage
+          sectionId={selectedSectionId}
+          questionCount={wordPracticeSettings?.questionCount ?? 5}
+          languageDirection={wordPracticeSettings?.languageDirection ?? 'english-to-korean'}
+          sessionSeed={wordPracticeSettings?.sessionSeed ?? 'preview'}
           onBack={() => {
-            setScreen('practice')
+            setScreen('customize-practice')
+          }}
+          onExit={() => {
+            setScreen('class')
+          }}
+          onComplete={() => {
+            setVocabularyLessonInitialView('card')
+            setScreen('vocabulary-lesson')
           }}
         />
       ) : visibleScreen === 'setting' ? (
@@ -942,13 +978,17 @@ function App() {
         <VocabularyLessonPage
           language={language}
           sectionId={selectedSectionId}
-          initialView={getInitialVocabularyLessonView()}
+          initialView={getInitialVocabularyLessonView() ?? vocabularyLessonInitialView}
           initialCardIndex={getInitialVocabularyCardIndex()}
           onBack={() => {
             setScreen(vocabularyLessonBackScreen)
           }}
           onExit={() => {
             setScreen('class')
+          }}
+          onOpenFlashcardPractice={() => {
+            setVocabularyLessonInitialView('card')
+            setScreen('customize-practice')
           }}
           onOpenNextGrammar={(nextSectionId) => {
             if (nextSectionId === null) {

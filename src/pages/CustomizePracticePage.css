@@ -160,16 +160,23 @@
 .customize-practice-next-button {
   position: fixed;
   left: 50%;
-  bottom: calc(24px + env(safe-area-inset-bottom));
+  bottom: calc(16px + env(safe-area-inset-bottom));
   transform: translateX(-50%);
-  width: min(354px, calc(100% - 36px));
-  height: 50px;
+  width: min(342px, calc(100% - 48px));
+  height: 52px;
   margin: 0;
   border: 0;
-  border-radius: 10px;
+  border-radius: 8px;
   background: var(--dojeon-color-primary-action);
   color: var(--dojeon-color-surface);
-  font: var(--dojeon-type-button-medium);
+  font-size: 16px;
+  font-weight: 500;
+  line-height: 1.2;
   cursor: pointer;
   z-index: 3;
+}
+
+.customize-practice-next-button:disabled {
+  background: var(--dojeon-color-gray-300);
+  cursor: not-allowed;
 }
