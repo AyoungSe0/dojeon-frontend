@@ -29,6 +29,21 @@ import { useCheckSectionAnswer } from '../hooks/useCheckSectionAnswer.ts'
 import { useSaveSectionProgress } from '../hooks/useSaveSectionProgress.ts'
 import { useCreateScrap } from '../hooks/useCreateScrap.ts'
 import { useSectionPageTimer } from '../hooks/useSectionPageTimer.ts'
+import { useSectionAnnotations } from '../hooks/useSectionAnnotations.ts'
+import AnnotatedText from '../components/AnnotatedText.tsx'
+import {
+  clearAnnotationReturn,
+  findAnnotationUnit,
+  pickAnnotationExplanation,
+  readAnnotationReturn,
+  saveAnnotationReturn,
+} from '../data/annotationText.ts'
+import type {
+  AnnotationTarget,
+  AnnotationUnit,
+  MarkMode,
+  SectionAnnotation,
+} from '../types/annotation.types.ts'
 
 export type PracticeStep =
   | 'choice'
@@ -55,6 +70,16 @@ interface GrammarPracticePageProps {
    * nextSection 이 null 이면 코스의 마지막 섹션이라 수업 밖으로 나간다.
    */
   onOpenNextSection: (nextSection: NextSection | null) => void
+  /**
+   * annotation 팝업의 GO TO LESSON 으로 열린 화면인지 여부.
+   * target.mode 가 EXPLANATION_ONLY 면 하단 BACK/NEXT 를 비활성화한다.
+   */
+  explanationOnly?: boolean
+  /** annotation 팝업의 GO TO LESSON. 복귀 정보(현재 섹션/단계)를 함께 넘긴다. */
+  onOpenAnnotationTarget?: (
+    target: AnnotationTarget,
+    returnInfo: { sectionId: number; step: PracticeStep },
+  ) => void
 }
 
 interface PracticeStateSnapshot {
@@ -90,6 +115,14 @@ type NextGrammarVocabId = 'yes' | 'together' | 'lunch' | 'eat'
 type NextGrammarDialogState =
   | { kind: 'grammar'; id: NextGrammarNoteId }
   | { kind: 'vocab'; id: NextGrammarVocabId }
+  // 서버 annotation 팝업. 한 구간에 여러 annotation 이 겹칠 수 있어 목록으로 들고,
+  // GO TO LESSON 복귀용으로 unit id 도 함께 기억한다.
+  | {
+      kind: 'annotation'
+      unitId: string
+      annotations: SectionAnnotation[]
+      index: number
+    }
 
 interface NextGrammarExampleToken {
   text: string
@@ -103,6 +136,46 @@ interface NextGrammarExampleMessage {
   side: 'left' | 'right'
   translation: string
   tokens: NextGrammarExampleToken[]
+  // 서버 예문은 annotation unit 매칭 정보를 함께 들고 AnnotatedText 로 그린다.
+  annotated?: AnnotatedLineSource
+}
+
+// 화면 라인 하나를 annotation unit 과 이어 주는 위치 정보.
+// jsonPath 가 null 이면(transcript 분해 라인) 원문 일치로만 폴백 매칭한다.
+interface AnnotatedLineSource {
+  text: string
+  materialId: number | null
+  jsonPath: string | null
+}
+
+interface AnnotatedDialogueLineModel {
+  key: string
+  speaker: string
+  line: DialogueLine
+  source: AnnotatedLineSource
+}
+
+// 자료의 dialogues 를 대화/라인 인덱스를 유지한 채 펼쳐서
+// 각 라인의 jsonPath($.dialogues[i].lines[j].ko)를 함께 만든다.
+function toAnnotatedDialogueLines(material: SectionMaterial | null): AnnotatedDialogueLineModel[] {
+  if (!material) return []
+
+  const models: AnnotatedDialogueLineModel[] = []
+  ;(material.contentText?.dialogues ?? []).forEach((dialogue, dialogueIndex) => {
+    ;(dialogue.lines ?? []).forEach((line, lineIndex) => {
+      models.push({
+        key: `${dialogueIndex}-${lineIndex}`,
+        speaker: line.speaker,
+        line,
+        source: {
+          text: line.ko,
+          materialId: material.id,
+          jsonPath: `$.dialogues[${dialogueIndex}].lines[${lineIndex}].ko`,
+        },
+      })
+    })
+  })
+  return models
 }
 
 type ReviewDifficulty = 'EASY' | 'NORMAL' | 'HARD'
@@ -125,10 +198,6 @@ function findMaterialByKeywords(
   if (byType) return byType
 
   return materials.find((material) => (material.contentText?.dialogues?.length ?? 0) > 0) ?? null
-}
-
-function toDialogueLines(material: SectionMaterial | null): DialogueLine[] {
-  return (material?.contentText?.dialogues ?? []).flatMap((dialogue) => dialogue.lines ?? [])
 }
 
 interface TextAnswerGrade {
@@ -335,9 +404,12 @@ function GrammarPracticePage({
   sectionId,
   initialPracticeStep = 'choice',
   onOpenNextSection,
+  explanationOnly = false,
+  onOpenAnnotationTarget,
 }: GrammarPracticePageProps) {
   const { data: questionsData, loading: questionsLoading } = useSectionQuestions(sectionId)
   const { data: materialsData, loading: materialsLoading } = useSectionMaterials(sectionId)
+  const { data: annotationsData } = useSectionAnnotations(sectionId)
   const checkAnswer = useCheckSectionAnswer()
   const saveProgress = useSaveSectionProgress()
   const createScrap = useCreateScrap()
@@ -380,11 +452,11 @@ function GrammarPracticePage({
 
   const sectionMaterials = useMemo(() => materialsData?.materials ?? [], [materialsData])
   const grammarDialogueLines = useMemo(
-    () => toDialogueLines(grammarMaterial),
+    () => toAnnotatedDialogueLines(grammarMaterial),
     [grammarMaterial],
   )
   const readingDialogueLines = useMemo(
-    () => toDialogueLines(findMaterialByKeywords(sectionMaterials, ['READING', 'TEXT'])),
+    () => toAnnotatedDialogueLines(findMaterialByKeywords(sectionMaterials, ['READING', 'TEXT'])),
     [sectionMaterials],
   )
   const listeningMaterial = useMemo(
@@ -392,7 +464,7 @@ function GrammarPracticePage({
     [sectionMaterials],
   )
   const listeningDialogueLines = useMemo(
-    () => toDialogueLines(listeningMaterial),
+    () => toAnnotatedDialogueLines(listeningMaterial),
     [listeningMaterial],
   )
   const listeningTranscriptLines = useMemo(
@@ -450,8 +522,11 @@ function GrammarPracticePage({
   const [makeSentenceAnswer, setMakeSentenceAnswer] = useState('')
   const [submittedMakeSentenceAnswer, setSubmittedMakeSentenceAnswer] = useState('')
   const [history, setHistory] = useState<PracticeStateSnapshot[]>([])
-  const [showGrammar, setShowGrammar] = useState(false)
-  const [showVocab, setShowVocab] = useState(false)
+  // MARK 선택 상태는 단일 값으로만 관리한다. 켜진 MARK 를 다시 누르면 null,
+  // 다른 MARK 를 누르면 기존 MARK 를 끄고 즉시 교체된다(동시 선택 없음).
+  const [markMode, setMarkMode] = useState<MarkMode>(null)
+  const showGrammar = markMode === 'GRAMMAR'
+  const showVocab = markMode === 'VOCAB'
   const [readingQuestionIndex, setReadingQuestionIndex] = useState(0)
   const [readingAnswers, setReadingAnswers] = useState<Record<number, string>>({})
   const [readingGradedAnswers, setReadingGradedAnswers] = useState<Record<number, boolean>>({})
@@ -752,13 +827,15 @@ function GrammarPracticePage({
     },
   ]
   // 서버가 이 섹션의 대화를 내려주면 레슨별 예문을 그대로 쓰고, 없을 때만 데모 예문으로 폴백한다.
-  // 서버 예문에는 문법/단어 마크 좌표가 없어서 Mark Grammar / Mark Vocab 하이라이트는 붙지 않는다.
+  // 서버 예문은 annotation API(unit) 매칭 정보를 들고 있어 Mark Grammar / Mark Vocab
+  // 하이라이트가 annotation 범위 그대로 붙는다.
   const serverNextGrammarExamples: NextGrammarExampleMessage[] = grammarDialogueLines.map(
-    (line, index) => ({
+    (model, index) => ({
       id: `grammar-dialogue-${index}`,
-      side: line.speaker === grammarDialogueLines[0]?.speaker ? 'left' : 'right',
-      translation: pickDialogueTranslation(line, contentLanguage),
-      tokens: [{ text: line.ko, emphasis: 'medium' as const }],
+      side: model.speaker === grammarDialogueLines[0]?.speaker ? 'left' : 'right',
+      translation: pickDialogueTranslation(model.line, contentLanguage),
+      tokens: [{ text: model.source.text, emphasis: 'medium' as const }],
+      annotated: model.source,
     }),
   )
   const nextGrammarExamples =
@@ -786,24 +863,101 @@ function GrammarPracticePage({
   }
 
   const toggleShowGrammar = () => {
-    if (showGrammar) {
-      setShowGrammar(false)
-      setActiveNextGrammarDialog(null)
-      return
-    }
-    setShowGrammar(true)
-    setShowVocab(false)
+    setMarkMode((current) => (current === 'GRAMMAR' ? null : 'GRAMMAR'))
     setActiveNextGrammarDialog(null)
   }
   const toggleShowVocab = () => {
-    if (showVocab) {
-      setShowVocab(false)
-      setActiveNextGrammarDialog(null)
+    setMarkMode((current) => (current === 'VOCAB' ? null : 'VOCAB'))
+    setActiveNextGrammarDialog(null)
+  }
+
+  // 서버 annotation 마크 클릭 → concept.explanation 팝업.
+  const handleAnnotationPress = (unit: AnnotationUnit, annotations: SectionAnnotation[]) => {
+    if (annotations.length === 0) return
+    setActiveNextGrammarDialog({
+      kind: 'annotation',
+      unitId: unit.id,
+      annotations,
+      index: 0,
+    })
+  }
+
+  // annotation 팝업의 GO TO LESSON. 복귀 시 같은 팝업을 다시 열 수 있게
+  // 복귀 정보를 session storage 에 남기고 App 에 이동을 위임한다.
+  const handleGoToAnnotationLesson = (unitId: string, annotation: SectionAnnotation) => {
+    const target = annotation.concept?.target ?? null
+    if (
+      !target ||
+      target.sectionId === null ||
+      !onOpenAnnotationTarget ||
+      sectionId === null ||
+      markMode === null
+    ) {
       return
     }
-    setShowVocab(true)
-    setShowGrammar(false)
+
+    saveAnnotationReturn({
+      sectionId,
+      unitId,
+      annotationId: annotation.id,
+      markMode,
+    })
     setActiveNextGrammarDialog(null)
+    onOpenAnnotationTarget(target, { sectionId, step: practiceStep })
+  }
+
+  // GO TO LESSON 후 상단 뒤로가기로 복귀했을 때 저장해 둔 팝업을 다시 연다.
+  const [pendingAnnotationRestore, setPendingAnnotationRestore] = useState(() => {
+    if (explanationOnly || sectionId === null) return null
+    const record = readAnnotationReturn()
+    return record && record.sectionId === sectionId ? record : null
+  })
+
+  useEffect(() => {
+    if (pendingAnnotationRestore === null || annotationsData === null) return
+
+    const timer = window.setTimeout(() => {
+      clearAnnotationReturn()
+      setPendingAnnotationRestore(null)
+
+      const unit = annotationsData.units.find(
+        (candidate) => candidate.id === pendingAnnotationRestore.unitId,
+      )
+      const annotation =
+        unit?.annotations.find(
+          (candidate) =>
+            candidate.id === pendingAnnotationRestore.annotationId &&
+            candidate.type === pendingAnnotationRestore.markMode,
+        ) ?? null
+      if (!unit || !annotation) return
+
+      setMarkMode(pendingAnnotationRestore.markMode)
+      setActiveNextGrammarDialog({
+        kind: 'annotation',
+        unitId: unit.id,
+        annotations: [annotation],
+        index: 0,
+      })
+    }, 0)
+
+    return () => window.clearTimeout(timer)
+  }, [annotationsData, pendingAnnotationRestore])
+
+  // 라인 하나를 annotation unit 과 매칭해 그린다. 원문이 unit.text 와 정확히
+  // 일치하지 않거나 분석 전이면 AnnotatedText 가 일반 텍스트로 폴백한다.
+  const renderAnnotatedLineText = (source: AnnotatedLineSource, className?: string) => {
+    const unit = findAnnotationUnit(annotationsData, source.materialId, source.jsonPath, source.text)
+    return (
+      <AnnotatedText
+        text={source.text}
+        unit={unit}
+        markMode={markMode}
+        className={className}
+        onAnnotationPress={(annotations) => {
+          if (unit) handleAnnotationPress(unit, annotations)
+        }}
+      />
+    )
   }
   const handleNextGrammarMarkPress = (noteId: NextGrammarNoteId) => {
     if (!showGrammar) return
@@ -837,9 +991,12 @@ function GrammarPracticePage({
     setMakeGrade(null)
   }
   const isNextGrammarDialogActive = (
-    kind: NextGrammarDialogState['kind'],
+    kind: 'grammar' | 'vocab',
     id: NextGrammarNoteId | NextGrammarVocabId,
-  ) => activeNextGrammarDialog?.kind === kind && activeNextGrammarDialog.id === id
+  ) =>
+    activeNextGrammarDialog !== null &&
+    activeNextGrammarDialog.kind === kind &&
+    activeNextGrammarDialog.id === id
 
   const renderNextGrammarExampleMark = (
     text: string,
@@ -894,6 +1051,11 @@ function GrammarPracticePage({
         </span>
       )
     })
+  // 서버 예문은 annotation 기반으로, 데모 예문은 하드코딩된 토큰 마크로 그린다.
+  const renderNextGrammarExampleContent = (example: NextGrammarExampleMessage) =>
+    example.annotated
+      ? renderAnnotatedLineText(example.annotated, 'grammar-practice-next-grammar-bubble-medium')
+      : renderNextGrammarExampleTokens(example.tokens)
 
   const currentSnapshot: PracticeStateSnapshot = {
     practiceStep,
@@ -1631,7 +1793,7 @@ function GrammarPracticePage({
                 <div className="grammar-practice-next-grammar-bubble-stack">
                   <div className="grammar-practice-next-grammar-bubble-row">
                     <div className="grammar-practice-next-grammar-bubble">
-                      <div>{renderNextGrammarExampleTokens(nextGrammarExamples[0].tokens)}</div>
+                      <div>{renderNextGrammarExampleContent(nextGrammarExamples[0])}</div>
                       {visibleExampleTranslations[nextGrammarExamples[0].id] ? (
                         <div
                           className="grammar-practice-next-grammar-translation grammar-practice-next-grammar-translation-left"
@@ -1669,7 +1831,7 @@ function GrammarPracticePage({
                     <div className="grammar-practice-next-grammar-bubble-stack">
                       <div className="grammar-practice-next-grammar-bubble-row">
                         <div className="grammar-practice-next-grammar-bubble">
-                          <div>{renderNextGrammarExampleTokens(example.tokens)}</div>
+                          <div>{renderNextGrammarExampleContent(example)}</div>
                           {visibleExampleTranslations[example.id] ? (
                             <div
                               className={`grammar-practice-next-grammar-translation grammar-practice-next-grammar-translation-${example.side}`}
@@ -1699,10 +1861,12 @@ function GrammarPracticePage({
               </div>
             </section>
 
+            {/* EXPLANATION_ONLY 로 이동해 온 화면에서는 하단 BACK/NEXT 를 쓸 수 없다. */}
             <div className="grammar-practice-next-grammar-actions">
               <button
                 type="button"
                 className="grammar-practice-next-grammar-action-button grammar-practice-next-grammar-action-button-back"
+                disabled={explanationOnly}
                 onClick={handleBackPress}
               >
                 BACK
@@ -1710,6 +1874,7 @@ function GrammarPracticePage({
               <button
                 type="button"
                 className="grammar-practice-next-grammar-action-button"
+                disabled={explanationOnly}
                 onClick={() => {
                   pushHistory()
                   setActiveNextGrammarDialog(null)
@@ -1720,40 +1885,6 @@ function GrammarPracticePage({
               </button>
             </div>
 
-            {activeNextGrammarDialog ? (
-              <div className="grammar-practice-next-grammar-note-backdrop" role="presentation" onClick={() => setActiveNextGrammarDialog(null)}>
-                <div
-                  className={`grammar-practice-next-grammar-note-dialog grammar-practice-next-grammar-note-dialog-${activeNextGrammarDialog.kind}`}
-                  role="dialog"
-                  aria-modal="true"
-                  aria-labelledby="next-grammar-note-title"
-                  onClick={(event) => event.stopPropagation()}
-                >
-                  <div className="grammar-practice-next-grammar-note-header">
-                    <h3 id="next-grammar-note-title" className="grammar-practice-next-grammar-note-title">
-                      {activeNextGrammarDialog.kind === 'grammar'
-                        ? nextGrammarNotes[activeNextGrammarDialog.id].title
-                        : nextGrammarVocabNotes[activeNextGrammarDialog.id].title}
-                    </h3>
-                    <span className="grammar-practice-next-grammar-note-plus" aria-hidden="true" />
-                  </div>
-                  <p
-                    className={`grammar-practice-next-grammar-note-description ${
-                      activeNextGrammarDialog.kind === 'vocab' ? 'grammar-practice-next-grammar-note-description-vocab' : ''
-                    }`}
-                  >
-                    {activeNextGrammarDialog.kind === 'grammar'
-                      ? nextGrammarNotes[activeNextGrammarDialog.id].description
-                      : nextGrammarVocabNotes[activeNextGrammarDialog.id].description}
-                  </p>
-                  {activeNextGrammarDialog.kind === 'grammar' ? (
-                    <button type="button" className="grammar-practice-next-grammar-note-button" onClick={handleGoToNextGrammarLesson}>
-                      GO TO LESSON
-                    </button>
-                  ) : null}
-                </div>
-              </div>
-            ) : null}
           </section>
         ) : isNextGrammarRulesStep ? (
           <section className="grammar-practice-next-grammar-rules-screen">
@@ -1855,15 +1986,21 @@ function GrammarPracticePage({
             <div className="grammar-practice-listening-scroll-area">
               <section className="grammar-practice-listening-script-card">
                 {isInitialMaterialsLoading ? null : listeningDialogueLines.length > 0 ? (
-                  listeningDialogueLines.map((line, index) => (
-                    <p key={`${index}-${line.ko}`} className="grammar-practice-listening-script-line">
-                      <span className="grammar-practice-listening-script-speaker">{line.speaker}</span> {line.ko}
+                  listeningDialogueLines.map((model) => (
+                    <p key={model.key} className="grammar-practice-listening-script-line">
+                      <span className="grammar-practice-listening-script-speaker">{model.speaker}</span>{' '}
+                      {renderAnnotatedLineText(model.source)}
                     </p>
                   ))
                 ) : listeningTranscriptLines.length > 0 ? (
                   listeningTranscriptLines.map((line, index) => (
                     <p key={`${index}-${line}`} className="grammar-practice-listening-script-line">
-                      {line}
+                      {/* transcript 는 라인별 jsonPath 를 알 수 없어 원문 일치로만 unit 을 찾는다. */}
+                      {renderAnnotatedLineText({
+                        text: line,
+                        materialId: listeningMaterial?.id ?? null,
+                        jsonPath: null,
+                      })}
                     </p>
                   ))
                 ) : (
@@ -2044,11 +2181,11 @@ function GrammarPracticePage({
               <button
                 type="button"
                 className={`grammar-practice-listening-next-button ${
-                  isListeningComplete && !saveProgress.isPending
+                  isListeningComplete && !saveProgress.isPending && !explanationOnly
                     ? 'grammar-practice-listening-next-button-active'
                     : ''
                 }`}
-                disabled={!isListeningComplete || saveProgress.isPending}
+                disabled={!isListeningComplete || saveProgress.isPending || explanationOnly}
                 onClick={() => void handleListeningComplete()}
               >
                 {saveProgress.isPending ? 'SAVING...' : 'Next'}
@@ -2090,12 +2227,12 @@ function GrammarPracticePage({
             </div>
             <section className="grammar-practice-reading-card">
               {readingDialogueLines.length > 0 ? (
-                readingDialogueLines.map((line, index) => (
-                  <p key={`${index}-${line.ko}`} className="grammar-practice-reading-line">
+                readingDialogueLines.map((model) => (
+                  <p key={model.key} className="grammar-practice-reading-line">
                     <span className={`grammar-practice-reading-name ${showVocab ? 'is-visible' : ''}`}>
-                      {line.speaker}
+                      {model.speaker}
                     </span>{' '}
-                    {line.ko}
+                    {renderAnnotatedLineText(model.source)}
                   </p>
                 ))
               ) : (
@@ -2313,10 +2450,10 @@ function GrammarPracticePage({
             </div>
             <button
               type="button"
-              className={`grammar-practice-reading-next-button ${isReadingComplete ? 'grammar-practice-reading-next-button-active' : ''}`}
-              disabled={!isReadingComplete}
+              className={`grammar-practice-reading-next-button ${isReadingComplete && !explanationOnly ? 'grammar-practice-reading-next-button-active' : ''}`}
+              disabled={!isReadingComplete || explanationOnly}
               onClick={() => {
-                if (!isReadingComplete) return
+                if (!isReadingComplete || explanationOnly) return
                 pushHistory()
                 setListeningQuestionIndex(0)
                 setListeningAnswers({})
@@ -2636,6 +2773,132 @@ function GrammarPracticePage({
             Next
           </button>
         )}
+
+        {/* MARK 팝업. annotation 팝업은 reading/listening 단계에서도 뜨도록 단계 밖에서 그린다. */}
+        {activeNextGrammarDialog ? (
+          <div
+            className="grammar-practice-next-grammar-note-backdrop"
+            role="presentation"
+            onClick={() => setActiveNextGrammarDialog(null)}
+          >
+            <div
+              className={`grammar-practice-next-grammar-note-dialog grammar-practice-next-grammar-note-dialog-${
+                activeNextGrammarDialog.kind === 'annotation'
+                  ? activeNextGrammarDialog.annotations[activeNextGrammarDialog.index]?.type ===
+                    'VOCAB'
+                    ? 'vocab'
+                    : 'grammar'
+                  : activeNextGrammarDialog.kind
+              }`}
+              role="dialog"
+              aria-modal="true"
+              aria-labelledby="next-grammar-note-title"
+              onClick={(event) => event.stopPropagation()}
+            >
+              {activeNextGrammarDialog.kind === 'annotation'
+                ? (() => {
+                    const dialog = activeNextGrammarDialog
+                    const annotation = dialog.annotations[dialog.index]
+                    if (!annotation) return null
+
+                    const explanationText = pickAnnotationExplanation(
+                      annotation.concept?.explanation,
+                      contentLanguage,
+                    )
+                    const target = annotation.concept?.target ?? null
+                    const canGoToLesson =
+                      target !== null &&
+                      target.sectionId !== null &&
+                      Boolean(onOpenAnnotationTarget) &&
+                      sectionId !== null &&
+                      markMode !== null
+
+                    return (
+                      <>
+                        {dialog.annotations.length > 1 ? (
+                          // 같은 구간에 annotation 이 겹치면 제목 탭으로 골라 볼 수 있다.
+                          <div
+                            className="grammar-practice-annotation-note-tabs"
+                            role="tablist"
+                            aria-label="이 구간의 annotation 목록"
+                          >
+                            {dialog.annotations.map((candidate, index) => (
+                              <button
+                                key={candidate.id}
+                                type="button"
+                                role="tab"
+                                aria-selected={index === dialog.index}
+                                className={`grammar-practice-annotation-note-tab ${
+                                  index === dialog.index ? 'is-selected' : ''
+                                }`}
+                                onClick={() =>
+                                  setActiveNextGrammarDialog({ ...dialog, index })
+                                }
+                              >
+                                {candidate.concept?.title || candidate.surface}
+                              </button>
+                            ))}
+                          </div>
+                        ) : null}
+                        <div className="grammar-practice-next-grammar-note-header">
+                          <h3
+                            id="next-grammar-note-title"
+                            className="grammar-practice-next-grammar-note-title"
+                          >
+                            {annotation.concept?.title || annotation.surface}
+                          </h3>
+                          <span className="grammar-practice-next-grammar-note-plus" aria-hidden="true" />
+                        </div>
+                        <p
+                          className={`grammar-practice-next-grammar-note-description ${
+                            annotation.type === 'VOCAB'
+                              ? 'grammar-practice-next-grammar-note-description-vocab'
+                              : ''
+                          }`}
+                        >
+                          {explanationText || annotation.surface}
+                        </p>
+                        {canGoToLesson ? (
+                          <button
+                            type="button"
+                            className="grammar-practice-next-grammar-note-button"
+                            onClick={() => handleGoToAnnotationLesson(dialog.unitId, annotation)}
+                          >
+                            GO TO LESSON
+                          </button>
+                        ) : null}
+                      </>
+                    )
+                  })()
+                : (
+                  <>
+                    <div className="grammar-practice-next-grammar-note-header">
+                      <h3 id="next-grammar-note-title" className="grammar-practice-next-grammar-note-title">
+                        {activeNextGrammarDialog.kind === 'grammar'
+                          ? nextGrammarNotes[activeNextGrammarDialog.id].title
+                          : nextGrammarVocabNotes[activeNextGrammarDialog.id].title}
+                      </h3>
+                      <span className="grammar-practice-next-grammar-note-plus" aria-hidden="true" />
+                    </div>
+                    <p
+                      className={`grammar-practice-next-grammar-note-description ${
+                        activeNextGrammarDialog.kind === 'vocab' ? 'grammar-practice-next-grammar-note-description-vocab' : ''
+                      }`}
+                    >
+                      {activeNextGrammarDialog.kind === 'grammar'
+                        ? nextGrammarNotes[activeNextGrammarDialog.id].description
+                        : nextGrammarVocabNotes[activeNextGrammarDialog.id].description}
+                    </p>
+                    {activeNextGrammarDialog.kind === 'grammar' ? (
+                      <button type="button" className="grammar-practice-next-grammar-note-button" onClick={handleGoToNextGrammarLesson}>
+                        GO TO LESSON
+                      </button>
+                    ) : null}
+                  </>
+                )}
+            </div>
+          </div>
+        ) : null}
       </section>
     </main>
   )
