@@ -3093,6 +3093,23 @@
   color: var(--dojeon-color-gray-900);
 }
 
+/* 목적지가 없거나 목적지 조회에 실패해서 GO TO LESSON 을 띄울 수 없을 때의 안내 문구. */
+.grammar-practice-annotation-note-empty {
+  margin: 24px 0 0;
+  padding: 12px;
+  border-radius: 8px;
+  background: var(--dojeon-color-gray-100, #f3f4f6);
+  color: var(--dojeon-color-gray-600);
+  font-size: 14px;
+  line-height: 1.5;
+  text-align: center;
+}
+
+.grammar-practice-next-grammar-note-button:disabled {
+  opacity: 0.6;
+  cursor: default;
+}
+
 .grammar-practice-next-grammar-rules-character-wrap {
   flex: 1 1 auto;
   min-height: 176px;
