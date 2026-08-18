@@ -26,7 +26,11 @@ import ProfileAchievementsPage from './pages/ProfileAchievementsPage'
 import SubscriptionPage from './pages/SubscriptionPage'
 import type { PatchUserRequest } from './types/user.types'
 import type { AnnotationTarget } from './types/annotation.types'
-import { clearAnnotationReturn } from './data/annotationText'
+import {
+  clearAnnotationReturn,
+  isGrammarSectionType,
+  isVocabSectionType,
+} from './data/annotationText'
 import { isUnauthorizedError } from './services/apiError'
 import { useChangeUserPassword } from './hooks/useChangeUserPassword.ts'
 import { useUpdateUserMe } from './hooks/useUpdateUserMe.ts'
@@ -338,6 +342,10 @@ function App() {
   const [vocabularyLessonInitialView, setVocabularyLessonInitialView] = useState<
     'intro' | 'card' | 'flashcards'
   >('intro')
+  // annotation 팝업의 GO TO LESSON 으로 열었을 때 먼저 보여줄 단어 카드(target.cardId).
+  const [vocabularyLessonInitialCardId, setVocabularyLessonInitialCardId] = useState<number | null>(
+    null,
+  )
   const [wordPracticeSettings, setWordPracticeSettings] = useState<{
     questionCount: number
     languageDirection: LanguageDirection
@@ -606,6 +614,7 @@ function App() {
     if (normalizedType === 'VOCAB' || normalizedType === 'VOCABULARY') {
       setSelectedSectionId(sectionId)
       setVocabularyLessonInitialView('intro')
+      setVocabularyLessonInitialCardId(null)
       setVocabularyLessonBackScreen(backScreen === 'home' ? 'class' : backScreen)
       setScreen('vocabulary-lesson')
       return true
@@ -628,14 +637,38 @@ function App() {
     return true
   }
 
-  /** annotation 팝업의 GO TO LESSON: concept.target 섹션을 열고 복귀 정보를 기억한다. */
+  /**
+   * annotation 팝업의 GO TO LESSON: concept.target 섹션을 열고 복귀 정보를 기억한다.
+   * sectionType 에 맞는 화면으로만 이동한다. 알 수 없는 타입이면 GRAMMAR 로
+   * 폴백하지 않고 false 를 돌려주고, 팝업이 대신 안내 문구를 띄운다.
+   */
   const handleOpenAnnotationTarget = (
     target: AnnotationTarget,
     returnInfo: { sectionId: number; step: PracticeStep },
   ) => {
-    if (target.sectionId === null) return
+    if (target.sectionId === null || target.sectionId <= 0) return false
 
-    const normalizedType = target.sectionType.toUpperCase()
+    const normalizedType = target.sectionType.trim().toUpperCase()
+    const jump = {
+      returnSectionId: returnInfo.sectionId,
+      returnStep: returnInfo.step,
+      explanationOnly: target.mode === 'EXPLANATION_ONLY',
+    }
+
+    if (isVocabSectionType(normalizedType)) {
+      setAnnotationJump(jump)
+      setSelectedSectionId(target.sectionId)
+      setVocabularyLessonInitialView('card')
+      setVocabularyLessonInitialCardId(target.cardId)
+      setScreen('vocabulary-lesson')
+      return true
+    }
+
+    if (!isGrammarSectionType(normalizedType)) {
+      console.warn(`Unsupported annotation target section type: ${target.sectionType}`)
+      return false
+    }
+
     const step: PracticeStep =
       normalizedType === 'READING'
         ? 'reading'
@@ -643,19 +676,17 @@ function App() {
           ? 'listening'
           : 'next-grammar'
 
-    setAnnotationJump({
-      returnSectionId: returnInfo.sectionId,
-      returnStep: returnInfo.step,
-      explanationOnly: target.mode === 'EXPLANATION_ONLY',
-    })
+    setAnnotationJump(jump)
     setSelectedSectionId(target.sectionId)
     setGrammarPracticeInitialStep(step)
     setScreen('grammar-practice')
+    return true
   }
 
   /** GO TO LESSON 으로 열린 화면의 상단 뒤로가기: 원래 섹션/단계로 복귀해 같은 팝업을 다시 연다. */
   const handleAnnotationJumpReturn = () => {
     if (!annotationJump) return
+    setVocabularyLessonInitialCardId(null)
     setSelectedSectionId(annotationJump.returnSectionId)
     setGrammarPracticeInitialStep(annotationJump.returnStep)
     setAnnotationJump(null)
@@ -1029,14 +1060,29 @@ function App() {
         />
       ) : visibleScreen === 'vocabulary-lesson' ? (
         <VocabularyLessonPage
+          // GO TO LESSON 으로 같은 섹션을 오갈 때도 다시 마운트되도록 jump 여부를 key 에 넣는다.
+          key={`vocabulary-lesson-${selectedSectionId ?? 'none'}-${
+            annotationJump ? `jump-${vocabularyLessonInitialCardId ?? 'none'}` : 'main'
+          }`}
           language={language}
           sectionId={selectedSectionId}
           initialView={getInitialVocabularyLessonView() ?? vocabularyLessonInitialView}
           initialCardIndex={getInitialVocabularyCardIndex()}
+          initialCardId={vocabularyLessonInitialCardId}
+          explanationOnly={annotationJump?.explanationOnly === true}
           onBack={() => {
+            // GO TO LESSON 으로 열린 화면이면 원래 섹션으로 복귀한다.
+            if (annotationJump) {
+              handleAnnotationJumpReturn()
+              return
+            }
             setScreen(vocabularyLessonBackScreen)
           }}
           onExit={() => {
+            if (annotationJump) {
+              handleAnnotationJumpReturn()
+              return
+            }
             setScreen('class')
           }}
           onOpenFlashcardPractice={() => {
@@ -1044,6 +1090,8 @@ function App() {
             setScreen('customize-practice')
           }}
           onOpenNextGrammar={(nextSectionId) => {
+            setAnnotationJump(null)
+            setVocabularyLessonInitialCardId(null)
             if (nextSectionId === null) {
               setSelectedSectionId(null)
             } else if (nextSectionId !== undefined) {

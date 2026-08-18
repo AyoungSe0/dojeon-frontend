@@ -1,4 +1,5 @@
 import type {
+  AnnotationTarget,
   AnnotationType,
   AnnotationUnit,
   SectionAnnotation,
@@ -192,4 +193,48 @@ export function clearAnnotationReturn() {
   } catch {
     // 무시: 저장이 안 됐다면 지울 것도 없다.
   }
+}
+
+// ── annotation GO TO LESSON 목적지 판정 ───────────────────────────────
+// 서버가 내려준 target 을 그대로 믿지 않고, annotation 타입과 섹션 타입이
+// 맞을 때만 목적지로 인정한다. 어긋나면 GRAMMAR 화면으로 폴백하지 않고
+// "목적지 없음"으로 취급한다.
+
+function normalizeSectionType(sectionType: string | null | undefined): string {
+  return (sectionType ?? '').trim().toUpperCase()
+}
+
+export function isVocabSectionType(sectionType: string | null | undefined): boolean {
+  const type = normalizeSectionType(sectionType)
+  return type === 'VOCAB' || type === 'VOCABULARY'
+}
+
+export function isGrammarSectionType(sectionType: string | null | undefined): boolean {
+  const type = normalizeSectionType(sectionType)
+  return type === 'GRAMMAR' || type === 'READING' || type === 'LISTENING'
+}
+
+// 이동 가능한 target 만 돌려준다. 하나라도 어긋나면 null:
+// concept 없음 / target 없음 / sectionId 없음 / annotation 타입과 sectionType 불일치.
+export function resolveAnnotationTarget(
+  annotation: SectionAnnotation | null | undefined,
+): AnnotationTarget | null {
+  const target = annotation?.concept?.target ?? null
+  if (!annotation || !target) return null
+  if (target.sectionId === null || target.sectionId <= 0) return null
+
+  return annotation.type === 'VOCAB'
+    ? isVocabSectionType(target.sectionType)
+      ? target
+      : null
+    : isGrammarSectionType(target.sectionType)
+      ? target
+      : null
+}
+
+// 목적지가 없거나 목적지 조회에 실패했을 때 팝업에 대신 띄우는 문구.
+export function annotationNoLessonMessage(type: AnnotationType): string {
+  return type === 'VOCAB'
+    ? '이 단어는 아직 학습할 수 있는 레슨이 없어요.'
+    : '이 문법은 아직 학습할 수 있는 레슨이 없어요.'
 }

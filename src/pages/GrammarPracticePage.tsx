@@ -32,12 +32,15 @@ import { useSectionPageTimer } from '../hooks/useSectionPageTimer.ts'
 import { useSectionAnnotations } from '../hooks/useSectionAnnotations.ts'
 import AnnotatedText from '../components/AnnotatedText.tsx'
 import {
+  annotationNoLessonMessage,
   clearAnnotationReturn,
   findAnnotationUnit,
   pickAnnotationExplanation,
   readAnnotationReturn,
+  resolveAnnotationTarget,
   saveAnnotationReturn,
 } from '../data/annotationText.ts'
+import { isAnnotationTargetAvailable } from '../services/section.service.ts'
 import type {
   AnnotationTarget,
   AnnotationUnit,
@@ -75,11 +78,14 @@ interface GrammarPracticePageProps {
    * target.mode 가 EXPLANATION_ONLY 면 하단 BACK/NEXT 를 비활성화한다.
    */
   explanationOnly?: boolean
-  /** annotation 팝업의 GO TO LESSON. 복귀 정보(현재 섹션/단계)를 함께 넘긴다. */
+  /**
+   * annotation 팝업의 GO TO LESSON. 복귀 정보(현재 섹션/단계)를 함께 넘긴다.
+   * 목적지 화면을 열지 못했으면 false 를 돌려준다(팝업이 안내 문구를 띄운다).
+   */
   onOpenAnnotationTarget?: (
     target: AnnotationTarget,
     returnInfo: { sectionId: number; step: PracticeStep },
-  ) => void
+  ) => boolean
 }
 
 interface PracticeStateSnapshot {
@@ -871,9 +877,17 @@ function GrammarPracticePage({
     setActiveNextGrammarDialog(null)
   }
 
+  // 목적지 조회가 404 등으로 실패했을 때 팝업에 대신 띄우는 문구.
+  const [annotationLessonBlockedMessage, setAnnotationLessonBlockedMessage] = useState<
+    string | null
+  >(null)
+  const [isCheckingAnnotationTarget, setIsCheckingAnnotationTarget] = useState(false)
+
   // 서버 annotation 마크 클릭 → concept.explanation 팝업.
   const handleAnnotationPress = (unit: AnnotationUnit, annotations: SectionAnnotation[]) => {
     if (annotations.length === 0) return
+    setAnnotationLessonBlockedMessage(null)
+    setIsCheckingAnnotationTarget(false)
     setActiveNextGrammarDialog({
       kind: 'annotation',
       unitId: unit.id,
@@ -882,17 +896,28 @@ function GrammarPracticePage({
     })
   }
 
-  // annotation 팝업의 GO TO LESSON. 복귀 시 같은 팝업을 다시 열 수 있게
-  // 복귀 정보를 session storage 에 남기고 App 에 이동을 위임한다.
-  const handleGoToAnnotationLesson = (unitId: string, annotation: SectionAnnotation) => {
-    const target = annotation.concept?.target ?? null
-    if (
-      !target ||
-      target.sectionId === null ||
-      !onOpenAnnotationTarget ||
-      sectionId === null ||
-      markMode === null
-    ) {
+  // annotation 팝업의 GO TO LESSON.
+  // annotation 타입과 맞는 목적지인지 확인하고, 실제로 열리는 섹션일 때만 이동한다.
+  // 이동할 수 없으면 다른 화면으로 폴백하지 않고 팝업에 안내 문구만 남긴다.
+  const handleGoToAnnotationLesson = async (unitId: string, annotation: SectionAnnotation) => {
+    if (isCheckingAnnotationTarget) return
+
+    const target = resolveAnnotationTarget(annotation)
+    if (!target || target.sectionId === null || !onOpenAnnotationTarget || sectionId === null || markMode === null) {
+      setAnnotationLessonBlockedMessage(annotationNoLessonMessage(annotation.type))
+      return
+    }
+
+    setIsCheckingAnnotationTarget(true)
+    let available = false
+    try {
+      available = await isAnnotationTargetAvailable(target.sectionId, target.sectionType)
+    } finally {
+      setIsCheckingAnnotationTarget(false)
+    }
+
+    if (!available) {
+      setAnnotationLessonBlockedMessage(annotationNoLessonMessage(annotation.type))
       return
     }
 
@@ -902,8 +927,15 @@ function GrammarPracticePage({
       annotationId: annotation.id,
       markMode,
     })
+
+    if (!onOpenAnnotationTarget(target, { sectionId, step: practiceStep })) {
+      // 화면을 열지 못했으면 복귀 기록을 되돌리고 안내 문구만 띄운다.
+      clearAnnotationReturn()
+      setAnnotationLessonBlockedMessage(annotationNoLessonMessage(annotation.type))
+      return
+    }
+
     setActiveNextGrammarDialog(null)
-    onOpenAnnotationTarget(target, { sectionId, step: practiceStep })
   }
 
   // GO TO LESSON 후 상단 뒤로가기로 복귀했을 때 저장해 둔 팝업을 다시 연다.
@@ -2805,13 +2837,16 @@ function GrammarPracticePage({
                       annotation.concept?.explanation,
                       contentLanguage,
                     )
-                    const target = annotation.concept?.target ?? null
+                    // annotation 타입과 맞는 목적지가 아니면 GO TO LESSON 자체를 숨긴다.
+                    const target = resolveAnnotationTarget(annotation)
                     const canGoToLesson =
                       target !== null &&
-                      target.sectionId !== null &&
                       Boolean(onOpenAnnotationTarget) &&
                       sectionId !== null &&
                       markMode !== null
+                    const blockedMessage = canGoToLesson
+                      ? annotationLessonBlockedMessage
+                      : annotationNoLessonMessage(annotation.type)
 
                     return (
                       <>
@@ -2831,9 +2866,11 @@ function GrammarPracticePage({
                                 className={`grammar-practice-annotation-note-tab ${
                                   index === dialog.index ? 'is-selected' : ''
                                 }`}
-                                onClick={() =>
+                                onClick={() => {
+                                  // 다른 annotation 으로 바꾸면 이전 안내 문구는 지운다.
+                                  setAnnotationLessonBlockedMessage(null)
                                   setActiveNextGrammarDialog({ ...dialog, index })
-                                }
+                                }}
                               >
                                 {candidate.concept?.title || candidate.surface}
                               </button>
@@ -2858,15 +2895,22 @@ function GrammarPracticePage({
                         >
                           {explanationText || annotation.surface}
                         </p>
-                        {canGoToLesson ? (
+                        {blockedMessage ? (
+                          <p className="grammar-practice-annotation-note-empty" role="status">
+                            {blockedMessage}
+                          </p>
+                        ) : (
                           <button
                             type="button"
                             className="grammar-practice-next-grammar-note-button"
-                            onClick={() => handleGoToAnnotationLesson(dialog.unitId, annotation)}
+                            disabled={isCheckingAnnotationTarget}
+                            onClick={() => {
+                              void handleGoToAnnotationLesson(dialog.unitId, annotation)
+                            }}
                           >
-                            GO TO LESSON
+                            {isCheckingAnnotationTarget ? 'LOADING...' : 'GO TO LESSON'}
                           </button>
-                        ) : null}
+                        )}
                       </>
                     )
                   })()

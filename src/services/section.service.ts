@@ -397,3 +397,33 @@ export function generateIdempotencyKey(): string {
     }
     return `${Date.now()}-${Math.random().toString(36).slice(2)}`
 }
+
+// GO TO LESSON 이동 전에 목적지 섹션이 실제로 열리는지 확인한다.
+// 404 등으로 조회가 실패하거나 내용이 비어 있으면 이동하지 않는다.
+// (비어 있는 채로 이동하면 수업 화면이 하드코딩 예시 내용으로 채워져
+//  실제 목적지처럼 보이기 때문에 실패와 똑같이 취급한다.)
+export async function isAnnotationTargetAvailable(
+    sectionId: number,
+    sectionType: string,
+    signal?: AbortSignal,
+): Promise<boolean> {
+    if (!Number.isFinite(sectionId) || sectionId <= 0) return false
+
+    const normalizedType = sectionType.trim().toUpperCase()
+    try {
+        if (normalizedType === 'VOCAB' || normalizedType === 'VOCABULARY') {
+            const data = await fetchSectionCards(sectionId, signal)
+            return (data?.cards.length ?? 0) > 0
+        }
+
+        const materials = await fetchSectionMaterials(sectionId, signal)
+        if ((materials?.materials.length ?? 0) > 0) return true
+
+        // READING/LISTENING 처럼 자료 없이 문항만 있는 섹션도 있어 한 번 더 확인한다.
+        const questions = await fetchSectionQuestions(sectionId, signal)
+        return (questions?.questions.length ?? 0) > 0
+    } catch (error) {
+        if (error instanceof DOMException && error.name === 'AbortError') throw error
+        return false
+    }
+}

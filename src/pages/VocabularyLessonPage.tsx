@@ -17,12 +17,22 @@ interface VocabularyLessonPageProps {
   sectionId: number | null
   initialView?: VocabularyLessonView
   initialCardIndex?: number
+  /**
+   * annotation 팝업의 GO TO LESSON 으로 들어왔을 때 target.cardId.
+   * 해당 단어 카드부터 보여준다. 그 카드가 이 섹션에 없으면 무시한다.
+   */
+  initialCardId?: number | null
   /** 수업 내부 한 단계 뒤로. 되돌아갈 단계가 없으면 수업 밖으로 나간다. */
   onBack: () => void
   /** 수업을 완전히 종료하고 수업 목록으로 나간다. */
   onExit: () => void
   onOpenFlashcardPractice: () => void
   onOpenNextGrammar: (sectionId?: number | null) => void
+  /**
+   * annotation 팝업의 GO TO LESSON 으로 열린 화면인지 여부.
+   * target.mode 가 EXPLANATION_ONLY 면 하단 BACK/NEXT 를 비활성화한다.
+   */
+  explanationOnly?: boolean
 }
 
 type VocabularyLessonView = 'intro' | 'card' | 'table' | 'flashcards'
@@ -65,10 +75,12 @@ function VocabularyLessonPage({
   sectionId,
   initialView = 'intro',
   initialCardIndex = 0,
+  initialCardId = null,
   onBack,
   onExit,
   onOpenFlashcardPractice,
   onOpenNextGrammar,
+  explanationOnly = false,
 }: VocabularyLessonPageProps) {
   const contentLanguage = toContentLanguage(language)
   const translationDir = contentTextDirection(contentLanguage)
@@ -78,7 +90,8 @@ function VocabularyLessonPage({
   const saveProgress = useSaveSectionProgress()
 
   const [view, setView] = useState<VocabularyLessonView>(initialView)
-  const [currentCardIndex, setCurrentCardIndex] = useState(Math.max(0, initialCardIndex))
+  // null 이면 아직 사용자가 카드를 옮기지 않은 상태라, 아래에서 목적지/초기값으로 유도한다.
+  const [selectedCardIndex, setSelectedCardIndex] = useState<number | null>(null)
   const [flippedWordIds, setFlippedWordIds] = useState<number[]>([])
   const [optimisticAdded, setOptimisticAdded] = useState<number[]>([])
   const [optimisticRemoved, setOptimisticRemoved] = useState<number[]>([])
@@ -131,6 +144,23 @@ function VocabularyLessonPage({
     },
     [cardsData, contentLanguage],
   )
+
+  // GO TO LESSON 으로 들어왔으면 target.cardId 에 해당하는 카드부터 보여준다.
+  // 카드가 아직 로딩 중이거나 그 카드가 이 섹션에 없으면 초기 인덱스로 폴백한다.
+  const targetCardIndex = useMemo(() => {
+    if (initialCardId === null) return null
+    const index = vocabularyItems.findIndex((item) => item.id === initialCardId)
+    return index >= 0 ? index : null
+  }, [initialCardId, vocabularyItems])
+
+  const defaultCardIndex = targetCardIndex ?? Math.max(0, initialCardIndex)
+  const currentCardIndex = selectedCardIndex ?? defaultCardIndex
+
+  const setCurrentCardIndex = (next: number | ((current: number) => number)) => {
+    setSelectedCardIndex((current) =>
+      typeof next === 'function' ? next(current ?? defaultCardIndex) : next,
+    )
+  }
 
   useSectionPageTimer({
     sectionId,
@@ -462,6 +492,7 @@ function VocabularyLessonPage({
             <button
               type="button"
               className="vocabulary-lesson-flashcards-back-button"
+              disabled={explanationOnly}
               onClick={handleBackPress}
             >
               BACK
@@ -755,7 +786,7 @@ function VocabularyLessonPage({
               <button
                 type="button"
                 className="vocabulary-lesson-next-button"
-                disabled={saveProgress.isPending}
+                disabled={saveProgress.isPending || explanationOnly}
                 onClick={() => void handleOpenNextGrammar()}
               >
                 NEXT
