@@ -25,6 +25,8 @@ import ProfileMainPage from './pages/ProfileMainPage'
 import ProfileAchievementsPage from './pages/ProfileAchievementsPage'
 import SubscriptionPage from './pages/SubscriptionPage'
 import type { PatchUserRequest } from './types/user.types'
+import type { AnnotationTarget } from './types/annotation.types'
+import { clearAnnotationReturn } from './data/annotationText'
 import { isUnauthorizedError } from './services/apiError'
 import { useChangeUserPassword } from './hooks/useChangeUserPassword.ts'
 import { useUpdateUserMe } from './hooks/useUpdateUserMe.ts'
@@ -321,6 +323,13 @@ function App() {
   const [grammarPracticeBackScreen, setGrammarPracticeBackScreen] = useState<
     'home' | 'class' | 'lesson-detail'
   >('home')
+  // annotation 팝업의 GO TO LESSON 으로 이동한 상태. 상단 뒤로가기로 복귀할
+  // 원래 섹션/단계와, EXPLANATION_ONLY(하단 이동 금지) 여부를 기억한다.
+  const [annotationJump, setAnnotationJump] = useState<{
+    returnSectionId: number
+    returnStep: PracticeStep
+    explanationOnly: boolean
+  } | null>(null)
   const [vocabularyLessonBackScreen, setVocabularyLessonBackScreen] = useState<
     'class' | 'lesson-detail'
   >(
@@ -590,6 +599,9 @@ function App() {
     backScreen: 'home' | 'class' | 'lesson-detail',
   ) => {
     const normalizedType = sectionType.toUpperCase()
+    // 일반 섹션 이동은 GO TO LESSON 복귀 상태(팝업 재열기 기록 포함)를 항상 정리한다.
+    setAnnotationJump(null)
+    clearAnnotationReturn()
 
     if (normalizedType === 'VOCAB' || normalizedType === 'VOCABULARY') {
       setSelectedSectionId(sectionId)
@@ -614,6 +626,40 @@ function App() {
     setGrammarPracticeBackScreen(backScreen)
     setScreen('grammar-practice')
     return true
+  }
+
+  /** annotation 팝업의 GO TO LESSON: concept.target 섹션을 열고 복귀 정보를 기억한다. */
+  const handleOpenAnnotationTarget = (
+    target: AnnotationTarget,
+    returnInfo: { sectionId: number; step: PracticeStep },
+  ) => {
+    if (target.sectionId === null) return
+
+    const normalizedType = target.sectionType.toUpperCase()
+    const step: PracticeStep =
+      normalizedType === 'READING'
+        ? 'reading'
+        : normalizedType === 'LISTENING'
+          ? 'listening'
+          : 'next-grammar'
+
+    setAnnotationJump({
+      returnSectionId: returnInfo.sectionId,
+      returnStep: returnInfo.step,
+      explanationOnly: target.mode === 'EXPLANATION_ONLY',
+    })
+    setSelectedSectionId(target.sectionId)
+    setGrammarPracticeInitialStep(step)
+    setScreen('grammar-practice')
+  }
+
+  /** GO TO LESSON 으로 열린 화면의 상단 뒤로가기: 원래 섹션/단계로 복귀해 같은 팝업을 다시 연다. */
+  const handleAnnotationJumpReturn = () => {
+    if (!annotationJump) return
+    setSelectedSectionId(annotationJump.returnSectionId)
+    setGrammarPracticeInitialStep(annotationJump.returnStep)
+    setAnnotationJump(null)
+    setScreen('grammar-practice')
   }
 
   return (
@@ -1065,17 +1111,30 @@ function App() {
       ) : visibleScreen === 'grammar-practice' ? (
         <GrammarPracticePage
           // 섹션이 바뀌면 새로 마운트해서 initialPracticeStep 과 내부 진행 상태를 처음부터 다시 잡는다.
-          key={`grammar-practice-${selectedSectionId ?? 'none'}`}
+          // 같은 섹션 안에서 GO TO LESSON 을 오갈 때도 다시 마운트되도록 jump 여부를 key 에 넣는다.
+          key={`grammar-practice-${selectedSectionId ?? 'none'}-${annotationJump ? 'jump' : 'main'}`}
           initialPracticeStep={grammarPracticeInitialStep}
           language={language}
           sectionId={selectedSectionId!}
+          explanationOnly={annotationJump?.explanationOnly === true}
+          onOpenAnnotationTarget={handleOpenAnnotationTarget}
           onBack={() => {
+            // GO TO LESSON 으로 열린 화면이면 원래 섹션으로 복귀한다.
+            if (annotationJump) {
+              handleAnnotationJumpReturn()
+              return
+            }
             setScreen(grammarPracticeBackScreen)
           }}
           onExit={() => {
+            if (annotationJump) {
+              handleAnnotationJumpReturn()
+              return
+            }
             setScreen('class')
           }}
           onOpenNextSection={(nextSection) => {
+            setAnnotationJump(null)
             // 마지막 섹션이거나 아직 지원하지 않는 타입이면 수업 목록으로 돌아간다.
             if (
               !nextSection ||

@@ -11,6 +11,13 @@ import type {
     SaveProgressRequest,
     SaveProgressData,
 } from '../types/section,types.ts'
+import type {
+    AnnotationConcept,
+    AnnotationTarget,
+    AnnotationUnit,
+    SectionAnnotation,
+    SectionAnnotationsData,
+} from '../types/annotation.types.ts'
 import { authenticatedFetch, getAuthToken } from './session.ts'
 
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL ?? ''
@@ -240,6 +247,114 @@ export async function fetchSectionQuestions(
     return {
         sectionId,
         questions: toRawList(data, 'questions').map(normalizeSectionQuestion),
+    }
+}
+
+// BigInt id 는 number 변환 시 정밀도가 깨질 수 있어 문자열 그대로 쓴다.
+function toBigIntString(value: unknown): string {
+    if (typeof value === 'string') return value
+    if (typeof value === 'number') return String(value)
+    return ''
+}
+
+function toNullableNumber(value: unknown): number | null {
+    if (typeof value === 'number' && Number.isFinite(value)) return value
+    if (typeof value === 'string' && value.trim().length > 0) {
+        const parsed = Number(value)
+        return Number.isFinite(parsed) ? parsed : null
+    }
+    return null
+}
+
+function normalizeAnnotationTarget(raw: unknown): AnnotationTarget | null {
+    if (!raw || typeof raw !== 'object') return null
+    const record = raw as Record<string, unknown>
+    return {
+        mode: String(record.mode ?? ''),
+        courseId: toNullableNumber(record.courseId),
+        lessonId: toNullableNumber(record.lessonId),
+        sectionId: toNullableNumber(record.sectionId),
+        sectionType: String(record.sectionType ?? ''),
+        cardId: toNullableNumber(record.cardId),
+        materialId: toNullableNumber(record.materialId),
+        pageNumber: toNullableNumber(record.pageNumber),
+    }
+}
+
+function normalizeAnnotationConcept(raw: unknown): AnnotationConcept | null {
+    if (!raw || typeof raw !== 'object') return null
+    const record = raw as Record<string, unknown>
+    return {
+        id: toBigIntString(record.id),
+        title: String(record.title ?? ''),
+        explanation: record.explanation ?? null,
+        target: normalizeAnnotationTarget(record.target),
+    }
+}
+
+function normalizeAnnotation(raw: Record<string, unknown>): SectionAnnotation | null {
+    const type = String(raw.type ?? '').toUpperCase()
+    if (type !== 'VOCAB' && type !== 'GRAMMAR') return null
+
+    const startOffset = toNullableNumber(raw.startOffset)
+    const endOffset = toNullableNumber(raw.endOffset)
+    if (startOffset === null || endOffset === null || startOffset < 0 || endOffset <= startOffset) {
+        return null
+    }
+
+    return {
+        id: toBigIntString(raw.id),
+        type,
+        startOffset,
+        endOffset,
+        surface: String(raw.surface ?? ''),
+        posTags: Array.isArray(raw.posTags) ? raw.posTags.map((tag) => String(tag)) : [],
+        confidence: toNullableNumber(raw.confidence),
+        concept: normalizeAnnotationConcept(raw.concept),
+    }
+}
+
+function normalizeAnnotationUnit(raw: Record<string, unknown>): AnnotationUnit {
+    const annotations = Array.isArray(raw.annotations) ? raw.annotations : []
+    return {
+        id: toBigIntString(raw.id),
+        materialId: toNullableNumber(raw.materialId) ?? 0,
+        jsonPath: String(raw.jsonPath ?? ''),
+        text: String(raw.text ?? ''),
+        textHash: String(raw.textHash ?? ''),
+        analysisStatus: String(raw.analysisStatus ?? ''),
+        annotations: annotations
+            .filter((entry): entry is Record<string, unknown> => Boolean(entry && typeof entry === 'object'))
+            .map(normalizeAnnotation)
+            .filter((annotation): annotation is SectionAnnotation => annotation !== null),
+    }
+}
+
+// GET /section/{id}/annotations — APPROVED annotation 만 내려온다.
+// 기존 수업 API 는 그대로 두고 MARK 기능에서만 추가로 호출한다.
+export async function fetchSectionAnnotations(
+    sectionId: number,
+    signal?: AbortSignal,
+): Promise<SectionAnnotationsData | null> {
+    const data = await fetchSectionResponse<unknown>(
+        `${API_BASE_URL}/section/${sectionId}/annotations`,
+        {
+            method: 'GET',
+            headers: buildHeaders(),
+            signal,
+        },
+        'Failed to fetch annotations',
+    )
+
+    if (data === null || typeof data !== 'object') return null
+
+    const record = data as Record<string, unknown>
+    return {
+        sectionId: toNullableNumber(record.sectionId) ?? sectionId,
+        courseId: toNullableNumber(record.courseId),
+        lessonId: toNullableNumber(record.lessonId),
+        offsetEncoding: String(record.offsetEncoding ?? 'UTF16'),
+        units: toRawList(record, 'units').map(normalizeAnnotationUnit),
     }
 }
 
