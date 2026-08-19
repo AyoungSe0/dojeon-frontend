@@ -211,13 +211,13 @@ const devPreviewPracticeSteps = new Set<PracticeStep>([
   'choice',
   'fill-intro',
   'fill',
+  'cards',
   'make-intro',
   'make',
   'review',
   'reading',
   'listening',
   'next-grammar',
-  'next-grammar-rules',
 ])
 
 const devPreviewVocabularyViews = new Set(['intro', 'card', 'table', 'flashcards'])

@@ -18,13 +18,7 @@ import {
   pickDialogueTranslation,
   toContentLanguage,
 } from '../data/contentLanguage.ts'
-import type {
-  DialogueLine,
-  MaterialPracticeKind,
-  NextSection,
-  SectionMaterial,
-  SectionQuestion,
-} from '../types/section,types.ts'
+import type { DialogueLine, NextSection, SectionMaterial } from '../types/section,types.ts'
 import { useCheckSectionAnswer } from '../hooks/useCheckSectionAnswer.ts'
 import { useSaveSectionProgress } from '../hooks/useSaveSectionProgress.ts'
 import { useCreateScrap } from '../hooks/useCreateScrap.ts'
@@ -47,18 +41,38 @@ import type {
   MarkMode,
   SectionAnnotation,
 } from '../types/annotation.types.ts'
+import { PRACTICE_STAGE_ORDER } from '../types/grammarPractice.types.ts'
+import type {
+  AnnotatedLineSource,
+  NextGrammarExampleMessage,
+  NextGrammarExampleToken,
+  NextGrammarNoteId,
+  NextGrammarVocabId,
+  PracticeItemModel,
+  PracticeQuestionModel,
+  PracticeStageId,
+  PracticeStep,
+} from '../types/grammarPractice.types.ts'
+import {
+  DEMO_PRACTICE_STAGES,
+  PRACTICE_STAGE_BY_STEP,
+  grammarPageByStep,
+  isSampleAnswerItem,
+  matchesPracticeAnswer,
+  mergePracticeItems,
+  resolvePracticeStep,
+  toGrammarTable,
+  toMaterialPracticeItems,
+  toPracticeQuestions,
+  toPracticeStages,
+  toQuestionPracticeItems,
+  toSentenceTokens,
+  toStageEntryStep,
+  toTextLines,
+} from '../data/grammarPracticeModel.ts'
+import { grammarPracticeDemo } from '../data/grammarPracticeDemo.ts'
 
-export type PracticeStep =
-  | 'choice'
-  | 'fill-intro'
-  | 'fill'
-  | 'make-intro'
-  | 'make'
-  | 'review'
-  | 'reading'
-  | 'listening'
-  | 'next-grammar'
-  | 'next-grammar-rules'
+export type { PracticeStep }
 
 interface GrammarPracticePageProps {
   /** 수업 내부 한 단계 뒤로. 되돌아갈 단계가 없으면 수업 밖으로 나간다. */
@@ -98,12 +112,9 @@ interface PracticeStateSnapshot {
   makeSentenceAnswer: string
   submittedMakeSentenceAnswer: string
   // 한 단계 안에서 여러 연습 문항을 순서대로 풀기 때문에 문항 위치와 채점 결과도 함께 되돌린다.
-  choiceItemIndex: number
-  fillItemIndex: number
-  makeItemIndex: number
+  practiceItemIndex: number
   serverGradedAnswers: Record<string, boolean>
-  fillGrade: TextAnswerGrade | null
-  makeGrade: TextAnswerGrade | null
+  textGrade: TextAnswerGrade | null
   readingQuestionIndex: number
   readingAnswers: Record<number, string>
   readingBlankAnswers: {
@@ -114,9 +125,6 @@ interface PracticeStateSnapshot {
   listeningAnswers: Record<number, string>
   listeningGradedAnswers: Record<number, boolean>
 }
-
-type NextGrammarNoteId = 'future-proposal' | 'polite-ending'
-type NextGrammarVocabId = 'yes' | 'together' | 'lunch' | 'eat'
 
 type NextGrammarDialogState =
   | { kind: 'grammar'; id: NextGrammarNoteId }
@@ -129,30 +137,6 @@ type NextGrammarDialogState =
       annotations: SectionAnnotation[]
       index: number
     }
-
-interface NextGrammarExampleToken {
-  text: string
-  grammarId?: NextGrammarNoteId
-  vocabId?: NextGrammarVocabId
-  emphasis?: 'medium' | 'semibold'
-}
-
-interface NextGrammarExampleMessage {
-  id: string
-  side: 'left' | 'right'
-  translation: string
-  tokens: NextGrammarExampleToken[]
-  // 서버 예문은 annotation unit 매칭 정보를 함께 들고 AnnotatedText 로 그린다.
-  annotated?: AnnotatedLineSource
-}
-
-// 화면 라인 하나를 annotation unit 과 이어 주는 위치 정보.
-// jsonPath 가 null 이면(transcript 분해 라인) 원문 일치로만 폴백 매칭한다.
-interface AnnotatedLineSource {
-  text: string
-  materialId: number | null
-  jsonPath: string | null
-}
 
 interface AnnotatedDialogueLineModel {
   key: string
@@ -210,197 +194,9 @@ interface TextAnswerGrade {
   answer: string
   correct: boolean
   correctAnswer?: string
-}
-
-interface PracticeQuestionModel {
-  questionId: number
-  title: string
-  prompt: string
-  type: 'choice' | 'blank'
-  options: string[]
-  answer: string | null
-}
-
-// contentText.practices 한 문항을 화면 모델로 바꾼 것.
-// prompt("1. 그것은 ____예요.")는 빈칸 기준으로 prefix/suffix 로 쪼개서 기존 카드 레이아웃
-// (문장 - 답 칸 - 문장)에 그대로 끼워 넣는다.
-interface PracticeItemModel {
-  key: string
-  kind: MaterialPracticeKind
-  fixedQuestion: string
-  hasImagePlaceholder: boolean
-  prefix: string
-  suffix: string
-  options: string[]
-  answers: string[]
-}
-
-function toStringList(value: unknown): string[] {
-  if (!Array.isArray(value)) return []
-  return value
-    .filter((entry) => typeof entry === 'string' || typeof entry === 'number')
-    .map((entry) => String(entry))
-}
-
-// "1. 그것은 ____예요." -> { prefix: '그것은', suffix: '예요.' }
-// 번호와 빈칸 표기(밑줄 개수)가 문항마다 달라서 정규식으로 느슨하게 걷어낸다.
-function splitPracticePrompt(prompt: string): { prefix: string; suffix: string } {
-  const withoutNumber = (prompt ?? '').replace(/^\s*\d+\s*[.)]\s*/, '')
-  const blank = withoutNumber.match(/_{2,}/)
-  if (!blank || blank.index === undefined) {
-    return { prefix: withoutNumber.trim(), suffix: '' }
-  }
-  return {
-    prefix: withoutNumber.slice(0, blank.index).trim(),
-    suffix: withoutNumber.slice(blank.index + blank[0].length).trim(),
-  }
-}
-
-// 자료에 실린 연습 문항을 kind 별로 펼친다. 블록(fixedQuestion + items) 순서를 그대로 유지해
-// choose 는 보기 선택 단계, fill 은 빈칸 단계, free 는 문장 만들기 단계로 이어 붙인다.
-function toPracticeItems(
-  materials: SectionMaterial[],
-  kind: MaterialPracticeKind,
-): PracticeItemModel[] {
-  const items: PracticeItemModel[] = []
-
-  materials.forEach((material) => {
-    ;(material.contentText?.practices ?? []).forEach((practice, blockIndex) => {
-      if ((practice?.kind ?? '').toLowerCase() !== kind) return
-
-      ;(practice.items ?? []).forEach((item, itemIndex) => {
-        const answers = toStringList(item?.answers)
-        const sample = typeof item?.sample === 'string' ? item.sample.trim() : ''
-        const { prefix, suffix } = splitPracticePrompt(item?.prompt ?? '')
-
-        items.push({
-          key: `${material.id}-${kind}-${blockIndex}-${itemIndex}`,
-          kind,
-          fixedQuestion: (practice.fixedQuestion ?? '').trim(),
-          hasImagePlaceholder: practice.imagePlaceholder === true,
-          prefix,
-          suffix,
-          options: toStringList(item?.options),
-          // 자유 작문(free)은 answers 없이 sample(모범 답안)만 온다.
-          answers: answers.length > 0 ? answers : sample.length > 0 ? [sample] : [],
-        })
-      })
-    })
-  })
-
-  return items
-}
-
-function normalizeAnswerText(value: string): string {
-  return value.replace(/\s+/g, ' ').trim()
-}
-
-function matchesPracticeAnswer(item: PracticeItemModel, answer: string): boolean {
-  const normalized = normalizeAnswerText(answer)
-  return item.answers.some((candidate) => normalizeAnswerText(candidate) === normalized)
-}
-
-interface GrammarTableModel {
-  headers: string[]
-  rows: string[][]
-}
-
-// 행 객체의 키 순서. 서버 표는 headers 순서대로 condition -> form -> examples 를 채워 내려준다.
-// (예: headers ["받침","형태","예시"] / row { condition: "받침 O", form: "N이에요", examples: [...] })
-const TABLE_ROW_KEYS = ['condition', 'form', 'examples']
-
-function toTableCellText(value: unknown): string {
-  if (value === null || value === undefined) return ''
-  if (Array.isArray(value)) {
-    return value
-      .map(toTableCellText)
-      .filter((text) => text.length > 0)
-      .join('\n')
-  }
-  if (typeof value === 'string' || typeof value === 'number') return String(value)
-  return ''
-}
-
-function toTableRowCells(row: unknown): string[] {
-  if (Array.isArray(row)) return row.map(toTableCellText)
-  if (row && typeof row === 'object') {
-    const record = row as Record<string, unknown>
-    const knownKeys = TABLE_ROW_KEYS.filter((key) => key in record)
-    const extraKeys = Object.keys(record).filter((key) => !TABLE_ROW_KEYS.includes(key))
-    const orderedKeys = knownKeys.length > 0 ? [...knownKeys, ...extraKeys] : extraKeys
-    return orderedKeys.map((key) => toTableCellText(record[key]))
-  }
-  return [toTableCellText(row)]
-}
-
-// contentText.table 은 { headers, rows } 객체로 오고, 예전 목 데이터처럼 행 배열([[...], ...])로
-// 오는 경우도 있어 둘 다 받는다. 표로 그릴 게 없으면 null 을 돌려 기존 표를 그대로 쓰게 한다.
-function toGrammarTable(table: unknown): GrammarTableModel | null {
-  let headers: string[] = []
-  let rawRows: unknown[] = []
-
-  if (Array.isArray(table)) {
-    rawRows = table
-  } else if (table && typeof table === 'object') {
-    const record = table as Record<string, unknown>
-    headers = toStringList(record.headers)
-    rawRows = Array.isArray(record.rows) ? record.rows : []
-  } else {
-    return null
-  }
-
-  const rows = rawRows
-    .map(toTableRowCells)
-    .filter((cells) => cells.some((cell) => cell.length > 0))
-  if (rows.length === 0) return null
-
-  const columnCount = Math.max(headers.length, ...rows.map((cells) => cells.length), 0)
-  if (columnCount === 0) return null
-
-  const padRow = (cells: string[]) => Array.from({ length: columnCount }, (_, index) => cells[index] ?? '')
-
-  return {
-    headers: headers.length > 0 ? padRow(headers) : [],
-    rows: rows.map(padRow),
-  }
-}
-
-function matchesQuestionType(question: SectionQuestion, keywords: string[]): boolean {
-  const type = (question.type ?? '').toUpperCase()
-  return keywords.some((keyword) => type.includes(keyword))
-}
-
-// 문장 만들기 단계에 보여줄 제시어. 서버가 "준호 / 커피 / 마시다" 처럼 구분자로 내려주면 쪼개고,
-// 아니면 문항 텍스트를 그대로 한 덩어리로 보여준다.
-function toSentenceTokens(questionText: string | undefined): string[] {
-  const tokens = (questionText ?? '')
-    .split(/[/,·|]/)
-    .map((token) => token.trim())
-    .filter((token) => token.length > 0)
-
-  return tokens.length > 0 ? tokens : []
-}
-
-function toPracticeQuestions(questions: SectionQuestion[]): PracticeQuestionModel[] {
-  return questions.map((question, index) => ({
-    questionId: question.id,
-    title: `Question ${index + 1}`,
-    prompt: question.questionText,
-    type: (question.options?.length ?? 0) > 0 ? 'choice' : 'blank',
-    options: question.options ?? [],
-    answer: question.answer,
-  }))
-}
-
-const grammarPageByStep: Partial<Record<PracticeStep, number>> = {
-  choice: 0,
-  'fill-intro': 1,
-  fill: 2,
-  'make-intro': 3,
-  make: 4,
-  review: 5,
-  'next-grammar': 6,
-  'next-grammar-rules': 7,
+  // 자유 작문(FREE)처럼 정답이 하나로 정해지지 않는 문항.
+  // correctAnswer 는 예시 문장(sample)일 뿐이라 정/오답 판정에 쓰지 않는다.
+  isSample?: boolean
 }
 
 function GrammarPracticePage({
@@ -413,45 +209,44 @@ function GrammarPracticePage({
   explanationOnly = false,
   onOpenAnnotationTarget,
 }: GrammarPracticePageProps) {
-  const { data: questionsData, loading: questionsLoading } = useSectionQuestions(sectionId)
-  const { data: materialsData, loading: materialsLoading } = useSectionMaterials(sectionId)
+  const {
+    data: questionsData,
+    loading: questionsLoading,
+    error: questionsError,
+    refetch: refetchQuestions,
+  } = useSectionQuestions(sectionId)
+  const {
+    data: materialsData,
+    loading: materialsLoading,
+    error: materialsError,
+    refetch: refetchMaterials,
+  } = useSectionMaterials(sectionId)
   const { data: annotationsData } = useSectionAnnotations(sectionId)
   const checkAnswer = useCheckSectionAnswer()
   const saveProgress = useSaveSectionProgress()
   const createScrap = useCreateScrap()
 
-  const firstMcq = useMemo(() => {
-    const questions = questionsData?.questions ?? []
-    return (
-      questions.find((q) => matchesQuestionType(q, ['MCQ', 'CHOICE'])) ??
-      questions.find((q) => (q.options?.length ?? 0) > 0) ??
-      null
-    )
-  }, [questionsData])
+  const sectionQuestions = useMemo(() => questionsData?.questions ?? [], [questionsData])
 
-  // 주관식 문항: 빈칸 채우기(fill) / 문장 만들기(make) 단계에 각각 연결한다.
-  // 서버 type 문자열이 확정되지 않아 키워드로 찾고, 없으면 보기 없는 문항을 순서대로 쓴다.
-  const textQuestions = useMemo(
-    () => (questionsData?.questions ?? []).filter((q) => (q.options?.length ?? 0) === 0),
-    [questionsData],
-  )
-  const fillQuestion = useMemo(
-    () =>
-      textQuestions.find((q) => matchesQuestionType(q, ['BLANK', 'FILL', 'SHORT', 'WORD'])) ??
-      textQuestions[0] ??
-      null,
-    [textQuestions],
-  )
-  const makeQuestion = useMemo(() => {
-    const byType = textQuestions.find((q) =>
-      matchesQuestionType(q, ['SENTENCE', 'MAKE', 'WRITE', 'COMPOSE']),
-    )
-    if (byType) return byType
-    return textQuestions.find((q) => q.id !== fillQuestion?.id) ?? null
-  }, [textQuestions, fillQuestion])
-
+  // 문법 자료. type 문자열이 섹션마다 다르게 내려올 수 있어(GRAMMAR_TABLE / GRAMMAR / ...)
+  // 키워드로 느슨하게 찾고, 그래도 못 찾으면 설명·표·대화가 실린 자료 -> 첫 자료 순으로 쓴다.
+  // 여기서 null 로 두면 설명/표/예문이 전부 비어 보이기 때문에 폭넓게 받는다.
   const grammarMaterial = useMemo(() => {
-    return materialsData?.materials.find((m) => m.type === 'GRAMMAR_TABLE') ?? null
+    const materials = materialsData?.materials ?? []
+    if (materials.length === 0) return null
+
+    return (
+      materials.find((material) => (material.type ?? '').toUpperCase().includes('GRAMMAR')) ??
+      materials.find((material) => {
+        const content = material.contentText
+        return Boolean(
+          content?.table ||
+            (content?.explanations?.length ?? 0) > 0 ||
+            (content?.dialogues?.length ?? 0) > 0,
+        )
+      }) ??
+      materials[0]
+    )
   }, [materialsData])
   const grammarMaterialId = grammarMaterial?.id ?? null
   const grammarContent = grammarMaterial?.contentText ?? null
@@ -482,44 +277,115 @@ function GrammarPracticePage({
     [listeningMaterial],
   )
   const serverPracticeQuestions = useMemo(
-    () => toPracticeQuestions(questionsData?.questions ?? []),
-    [questionsData],
-  )
-  // 자료(contentText.practices)에 연습 문항이 실려 있으면 그것을 우선 쓰고,
-  // 없을 때 문항 API -> 데모 문항 순으로 폴백한다.
-  const choicePracticeItems = useMemo(
-    () => toPracticeItems(sectionMaterials, 'choose'),
-    [sectionMaterials],
-  )
-  const fillPracticeItems = useMemo(
-    () => toPracticeItems(sectionMaterials, 'fill'),
-    [sectionMaterials],
-  )
-  const makePracticeItems = useMemo(
-    () => toPracticeItems(sectionMaterials, 'free'),
-    [sectionMaterials],
+    () => toPracticeQuestions(sectionQuestions),
+    [sectionQuestions],
   )
 
-  const fallbackChoicePrompt = '준호씨가 커피를'
-  const fallbackChoiceOptions = ['마시다', '먹다', '보다', '가다']
-  const fallbackCorrectChoice = '마시다'
+  const isInitialMaterialsLoading = materialsLoading && materialsData === null
+  const isInitialQuestionsLoading = questionsLoading && questionsData === null
+  const isInitialSectionLoading = isInitialMaterialsLoading || isInitialQuestionsLoading
+  const sectionLoadError = materialsError ?? questionsError
 
-  const fillCorrectAnswer = '마시다'
-  const makeCorrectAnswer = '준호씨가 커피를 마신다.'
+  // 이 섹션에 실제로 존재하는 연습 단계와 문항.
+  // 자료(contentText.practices)와 문항 API 를 합쳐서 만들고, 어느 쪽에도 없는 단계는
+  // 흐름에서 아예 빠진다. 즉 MCQ 가 없으면 choice 화면 자체가 나오지 않는다.
+  const serverPracticeStages = useMemo(
+    () => toPracticeStages(sectionMaterials, sectionQuestions),
+    [sectionMaterials, sectionQuestions],
+  )
+  const serverPracticeItemsByStage = useMemo(() => {
+    const byStage = {} as Record<PracticeStageId, PracticeItemModel[]>
+    PRACTICE_STAGE_ORDER.forEach((stage) => {
+      byStage[stage] = mergePracticeItems(
+        toMaterialPracticeItems(sectionMaterials, stage),
+        toQuestionPracticeItems(sectionQuestions, stage),
+      )
+    })
+    return byStage
+  }, [sectionMaterials, sectionQuestions])
+  const availableServerStages = useMemo(
+    () => serverPracticeStages.filter((stage) => serverPracticeItemsByStage[stage].length > 0),
+    [serverPracticeStages, serverPracticeItemsByStage],
+  )
 
-  const choicePrompt = firstMcq?.questionText ?? fallbackChoicePrompt
-  const fillPrompt = fillQuestion?.questionText ?? choicePrompt
-  const fallbackSentenceTokens = ['준호', '커피', '마시다']
-  const serverSentenceTokens = toSentenceTokens(makeQuestion?.questionText)
+  // 개발 서버 전용 시안 문항. 운영 빌드에서는 grammarPracticeDemo 가 null 이라 이 값도 null 이고,
+  // 서버 데이터가 없으면 데모 대신 빈 상태 안내를 보여 준다.
+  const demoPracticeItemsByStage = useMemo(() => {
+    const demo = grammarPracticeDemo
+    if (demo === null) return null
+
+    const base = {
+      questionId: null,
+      fixedQuestion: '',
+      hasImagePlaceholder: false,
+      suffix: '',
+      isSampleAnswer: false,
+      cardBack: '',
+    }
+    const byStage: Record<PracticeStageId, PracticeItemModel[]> = {
+      choice: [
+        {
+          ...base,
+          key: 'demo-choice',
+          stage: 'choice',
+          kind: 'choose',
+          prefix: demo.choice.prompt,
+          options: demo.choice.options,
+          answers: [demo.choice.correctAnswer],
+        },
+      ],
+      fill: [
+        {
+          ...base,
+          key: 'demo-fill',
+          stage: 'fill',
+          kind: 'fill',
+          prefix: demo.choice.prompt,
+          options: [],
+          answers: [demo.fillCorrectAnswer],
+        },
+      ],
+      cards: [],
+      make: [
+        {
+          ...base,
+          key: 'demo-make',
+          stage: 'make',
+          kind: 'free',
+          prefix: demo.sentenceTokens.join(' / '),
+          options: [],
+          answers: [demo.makeCorrectAnswer],
+        },
+      ],
+    }
+    return byStage
+  }, [])
+
+  const useDemoPractice =
+    availableServerStages.length === 0 &&
+    !isInitialSectionLoading &&
+    demoPracticeItemsByStage !== null
+  const practiceStages: PracticeStageId[] =
+    useDemoPractice && demoPracticeItemsByStage !== null
+      ? DEMO_PRACTICE_STAGES
+      : availableServerStages
+  const practiceItemsByStage =
+    useDemoPractice && demoPracticeItemsByStage !== null
+      ? demoPracticeItemsByStage
+      : serverPracticeItemsByStage
+  const firstPracticeStep: PracticeStep | null =
+    practiceStages.length > 0 ? toStageEntryStep(practiceStages[0], true) : null
 
   const [serverGradedAnswers, setServerGradedAnswers] = useState<Record<string, boolean>>({})
-  const [fillGrade, setFillGrade] = useState<TextAnswerGrade | null>(null)
-  const [makeGrade, setMakeGrade] = useState<TextAnswerGrade | null>(null)
+  const [textGrade, setTextGrade] = useState<TextAnswerGrade | null>(null)
 
-  const [practiceStep, setPracticeStep] = useState<PracticeStep>(initialPracticeStep)
-  const [choiceItemIndex, setChoiceItemIndex] = useState(0)
-  const [fillItemIndex, setFillItemIndex] = useState(0)
-  const [makeItemIndex, setMakeItemIndex] = useState(0)
+  const [requestedPracticeStep, setPracticeStep] = useState<PracticeStep>(initialPracticeStep)
+  const practiceStep = resolvePracticeStep(
+    requestedPracticeStep,
+    practiceStages,
+    isInitialSectionLoading,
+  )
+  const [practiceItemCursor, setPracticeItemCursor] = useState(0)
   const [selectedAnswer, setSelectedAnswer] = useState('')
   const [revealedAnswers, setRevealedAnswers] = useState<string[]>([])
   const [choiceFeedback, setChoiceFeedback] = useState<ChoiceFeedback | null>(null)
@@ -582,95 +448,62 @@ function GrammarPracticePage({
   const isReadingStep = practiceStep === 'reading'
   const isListeningStep = practiceStep === 'listening'
   const isNextGrammarStep = practiceStep === 'next-grammar'
-  const isNextGrammarRulesStep = practiceStep === 'next-grammar-rules'
+  const isCardsStep = practiceStep === 'cards'
+  const isTextStep = isFillStep || isMakeStep
+  const isPracticeStep = isChoiceStep || isFillStep || isCardsStep || isMakeStep
 
-  const activeChoicePractice = choicePracticeItems[choiceItemIndex] ?? null
-  const activeFillPractice = fillPracticeItems[fillItemIndex] ?? null
-  const activeMakePractice = makePracticeItems[makeItemIndex] ?? null
-
-  const choiceOptions =
-    activeChoicePractice && activeChoicePractice.options.length > 0
-      ? activeChoicePractice.options
-      : firstMcq?.options ?? fallbackChoiceOptions
-  // 자유 작문 연습에는 제시어가 없고 고정 질문("이것은 뭐예요?")에 답하는 형태라 제시어 줄을 숨긴다.
-  const sentenceTokens = activeMakePractice
-    ? []
-    : serverSentenceTokens.length > 0
-    ? serverSentenceTokens
-    : fallbackSentenceTokens
-
-  // 지금 단계에서 풀고 있는 자료 연습 문항. 단계 안에서 문항을 순서대로 넘기며 푼다.
-  const activePractice = isMakeStep
-    ? activeMakePractice
-    : isFillStep
-    ? activeFillPractice
-    : isChoiceStep
-    ? activeChoicePractice
-    : null
-  const practiceItemCount = isMakeStep
-    ? makePracticeItems.length
-    : isFillStep
-    ? fillPracticeItems.length
-    : isChoiceStep
-    ? choicePracticeItems.length
-    : 0
-  const practiceItemIndex = isMakeStep
-    ? makeItemIndex
-    : isFillStep
-    ? fillItemIndex
-    : choiceItemIndex
+  // 지금 단계에서 풀고 있는 연습 문항. 단계 안에서 문항을 순서대로 넘기며 푼다.
+  const currentStage = PRACTICE_STAGE_BY_STEP[practiceStep] ?? null
+  const currentStageIndex = currentStage === null ? -1 : practiceStages.indexOf(currentStage)
+  const currentStageItems = currentStage === null ? [] : practiceItemsByStage[currentStage]
+  const practiceItemCount = currentStageItems.length
+  // 단계가 바뀌면 문항 수가 달라져서 커서가 범위를 벗어날 수 있어 항상 범위 안으로 맞춘다.
+  const practiceItemIndex =
+    practiceItemCount > 0 ? Math.min(practiceItemCursor, practiceItemCount - 1) : 0
+  const activePractice = currentStageItems[practiceItemIndex] ?? null
   const hasNextPracticeItem = practiceItemIndex < practiceItemCount - 1
+  // 연습 화면인데 보여 줄 문항이 없으면 데모로 폴백하지 않고 빈 상태/오류 안내를 그린다.
+  const showPracticeEmptyState = isPracticeStep && activePractice === null
+  // 진행 표시줄 / 안내 문구 / Next 버튼은 실제 문항을 그릴 때만 띄운다.
+  const showPracticeChrome = isPracticeStep && !showPracticeEmptyState
 
-  const currentAnswer = isFillIntroStep || isMakeIntroStep
-    ? ''
-    : isReviewStep
-    ? ''
-    : isReadingStep
-    ? ''
-    : isListeningStep
-    ? ''
-    : isNextGrammarRulesStep
-    ? ''
-    : isNextGrammarStep
-    ? ''
-    : isMakeStep
-    ? submittedMakeSentenceAnswer
+  const choiceOptions = activePractice?.options ?? []
+  // 자유 작문 연습이 고정 질문("이것은 뭐예요?")을 들고 있으면 제시어 줄 대신 그 질문만 보여 준다.
+  const sentenceTokens =
+    activePractice !== null && activePractice.stage === 'make' && activePractice.fixedQuestion === ''
+      ? toSentenceTokens(activePractice.prefix)
+      : []
+
+  const currentAnswer = isChoiceStep
+    ? selectedAnswer
     : isFillStep
     ? submittedTypedAnswer
-    : selectedAnswer
+    : isMakeStep
+    ? submittedMakeSentenceAnswer
+    : ''
 
-  // fill/make 는 자료 연습 문항 -> 서버 문항 -> 데모 정답 순으로 채점 기준을 고른다.
-  const activeTextPractice = isMakeStep ? activeMakePractice : activeFillPractice
-  const activeTextQuestion = isMakeStep ? makeQuestion : fillQuestion
-  const activeTextGrade = isMakeStep ? makeGrade : fillGrade
-  const matchedTextGrade =
-    activeTextGrade && activeTextGrade.answer === currentAnswer ? activeTextGrade : null
-  const correctAnswer =
-    matchedTextGrade?.correctAnswer ??
-    activeTextPractice?.answers[0] ??
-    (isMakeStep ? makeCorrectAnswer : fillCorrectAnswer)
+  // 문항에 정답이 실려 있으면 그것으로, 없으면 채점 API 결과(textGrade)로 판정한다.
+  const matchedTextGrade = textGrade && textGrade.answer === currentAnswer ? textGrade : null
+  const correctAnswer = matchedTextGrade?.correctAnswer ?? activePractice?.answers[0] ?? ''
   const isAnswered = currentAnswer.length > 0
-  // free 연습은 정답이 하나로 정해지지 않고 sample(모범 답안)만 오므로 정/오답을 매기지 않는다.
-  const isFreeWritingPractice = activeTextPractice?.kind === 'free'
-  const showMakeSample = isFreeWritingPractice && isAnswered
+  // free 연습(자료 free 블록 / FREE 문항)은 정답이 하나로 정해지지 않고 sample(모범 답안)만
+  // 오므로 정/오답을 매기지 않는다. 채점 API 응답이 예시였을 때도 같게 본다.
+  const isFreeWritingPractice =
+    (activePractice?.kind === 'free' && activePractice.isSampleAnswer) ||
+    matchedTextGrade?.isSample === true
+  const showMakeSample = isFreeWritingPractice && isAnswered && correctAnswer.length > 0
 
   let isCorrectAnswer: boolean
   let isWrongAnswer: boolean
-  if (isFillIntroStep || isMakeIntroStep || isReviewStep || isReadingStep || isListeningStep || isNextGrammarStep || isNextGrammarRulesStep) {
+  if (!isPracticeStep || isFreeWritingPractice) {
     isCorrectAnswer = false
     isWrongAnswer = false
-  } else if (isFreeWritingPractice) {
-    isCorrectAnswer = false
-    isWrongAnswer = false
-  } else if (!isFillStep && !isMakeStep) {
+  } else if (isChoiceStep) {
     isCorrectAnswer = isAnswered && serverGradedAnswers[currentAnswer] === true
     isWrongAnswer = isAnswered && serverGradedAnswers[currentAnswer] === false
-  } else if (activeTextPractice || activeTextQuestion) {
+  } else {
     isCorrectAnswer = matchedTextGrade?.correct === true
     isWrongAnswer = matchedTextGrade?.correct === false
-  } else {
-    isCorrectAnswer = currentAnswer === correctAnswer
-    isWrongAnswer = isAnswered && !isCorrectAnswer
   }
   const shouldShowChoiceFeedback =
     isChoiceStep &&
@@ -686,82 +519,66 @@ function GrammarPracticePage({
   const showMakeResultPanel = isMakeStep && isAnswered && (isCorrectAnswer || isWrongAnswer)
   const makeResultImage = isCorrectAnswer ? choiceCorrectImage : choiceWrongImage
   const hasCompletedTextGrade = matchedTextGrade !== null
-  const canMoveToNextPracticeStep =
-    isAnswered &&
-    !checkAnswer.isPending &&
-    (!isChoiceStep || showChoiceFeedbackPanel) &&
-    (!(isFillStep || isMakeStep) || hasCompletedTextGrade)
+  const canMoveToNextPracticeStep = isCardsStep
+    ? activePractice !== null
+    : isAnswered &&
+      !checkAnswer.isPending &&
+      (!isChoiceStep || showChoiceFeedbackPanel) &&
+      (!isTextStep || hasCompletedTextGrade)
   const currentTextAnswer = isMakeStep ? makeSentenceAnswer : typedAnswer
   const submittedTextAnswer = isMakeStep ? submittedMakeSentenceAnswer : submittedTypedAnswer
   const canSubmitTextAnswer =
-    (isFillStep || isMakeStep) &&
+    isTextStep &&
     !checkAnswer.isPending &&
     currentTextAnswer.trim().length > 0 &&
     currentTextAnswer.trim() !== submittedTextAnswer
   const isNextPracticeStepEnabled = canSubmitTextAnswer || canMoveToNextPracticeStep
 
-  // 서버 문항이 내려오면 그것을 쓰고, 없을 때만 기존 데모 문항으로 폴백한다.
+  // 서버 문항이 내려오면 그것을 쓰고, 개발 서버에서만 시안 문항으로 폴백한다.
+  // 운영 빌드에서는 grammarPracticeDemo 가 null 이라 문항이 없으면 그냥 비워 둔다.
   const hasServerQuestions = serverPracticeQuestions.length > 0
-  const fallbackReadingQuestions: PracticeQuestionModel[] = [
-    {
-      questionId: -1,
-      title: 'Question 1',
-      prompt: '두 사람은 며칠에 만났어요?',
-      type: 'choice',
-      options: ['월요일', '수요일', '토요일', '일요일'],
-      answer: '토요일',
-    },
-    {
-      questionId: -2,
-      title: 'Question 2',
-      prompt: '마리 씨는 왜 오늘 영화를 못 봐요?',
-      type: 'blank',
-      options: [],
-      answer: null,
-    },
-  ]
+  const canUseDemoQuestions =
+    !hasServerQuestions && !isInitialQuestionsLoading && grammarPracticeDemo !== null
   const readingQuestions: PracticeQuestionModel[] = hasServerQuestions
     ? serverPracticeQuestions
-    : fallbackReadingQuestions
-  const isReadingComplete = hasServerQuestions
-    ? readingQuestions.every((_, index) => (readingAnswers[index] ?? '').trim().length > 0)
-    : Boolean(readingAnswers[0]) &&
-      readingBlankAnswers.meeting.trim().length > 0 &&
-      readingBlankAnswers.reason.trim().length > 0
+    : canUseDemoQuestions
+      ? grammarPracticeDemo?.readingQuestions ?? []
+      : []
+  // 데모 지문 문항은 화면에 직접 박아 둔 빈칸 두 개를 따로 채워야 완료로 본다.
+  const isReadingComplete = isInitialQuestionsLoading
+    ? false
+    : readingQuestions.length === 0
+      ? true
+      : hasServerQuestions
+        ? readingQuestions.every((_, index) => (readingAnswers[index] ?? '').trim().length > 0)
+        : Boolean(readingAnswers[0]) &&
+          readingBlankAnswers.meeting.trim().length > 0 &&
+          readingBlankAnswers.reason.trim().length > 0
   const readingCardWidth = 350
   const readingCardGap = 8
   const readingTrackOffset = 24
   const readingTrackStride = readingCardWidth + readingCardGap
   const readingTrackTranslate =
     readingTrackOffset - readingQuestionIndex * readingTrackStride + readingDragOffset
-  const fallbackListeningQuestions: PracticeQuestionModel[] = [
-    {
-      questionId: -11,
-      title: 'Question 1',
-      prompt: '두 사람은 몇시에 만나요?',
-      type: 'choice',
-      options: ['2:00', '2:30', '3:00', '3:30'],
-      answer: '2:00',
-    },
-  ]
-  const isInitialMaterialsLoading = materialsLoading && materialsData === null
-  const isInitialQuestionsLoading = questionsLoading && questionsData === null
   const listeningQuestions = isInitialQuestionsLoading
     ? []
     : hasServerQuestions
       ? serverPracticeQuestions
-      : fallbackListeningQuestions
+      : canUseDemoQuestions
+        ? grammarPracticeDemo?.listeningQuestions ?? []
+        : []
+  // 문항이 하나도 없는 섹션이라도 대본만 듣고 완료할 수 있어야 해서 빈 목록은 완료로 본다.
   const isListeningComplete =
-    listeningQuestions.length > 0 &&
+    !isInitialQuestionsLoading &&
+    !checkAnswer.isPending &&
     listeningQuestions.every(
       (question) => {
-        return (
-          (listeningAnswers[question.questionId] ?? '').trim().length > 0 &&
-          listeningGradedAnswers[question.questionId] !== undefined
-        )
+        const hasAnswer = (listeningAnswers[question.questionId] ?? '').trim().length > 0
+        // FREE 는 채점하지 않으므로 답을 쓰기만 하면 완료로 본다.
+        if (question.type === 'free') return hasAnswer
+        return hasAnswer && listeningGradedAnswers[question.questionId] !== undefined
       },
-    ) &&
-    !checkAnswer.isPending
+    )
   const listeningQuestionIndexForDisplay = Math.min(
     listeningQuestionIndex,
     Math.max(0, listeningQuestions.length - 1),
@@ -777,61 +594,19 @@ function GrammarPracticePage({
   const progressDotPositions = [3, 21.8, 40.6, 59.4, 78.2, 97]
   const contentLanguage = toContentLanguage(language)
   const isTranslationRtl = isRtlContentLanguage(contentLanguage)
-  // 서버 설명이 있으면 mother language에 맞는 것을 쓰고, 없으면 언어별 기본 문구로 폴백한다.
+  // 서버 설명이 있으면 mother language 에 맞는 것을 쓴다.
+  // 없으면 개발 서버에서만 시안 문구로 폴백하고, 운영에서는 설명 영역을 비워 둔다.
   const grammarExplanation = pickContentExplanation(grammarContent, contentLanguage)
-  const fallbackGrammarExplanationLines =
-    contentLanguage === 'he'
-      ? [
-          'הזמנה לפעולה.',
-          '"שנעשה (משהו)?"',
-          'זו צורת דיבור בלבד בפנייה לאדם כלשהו, עם',
-          'כוונה להציע לעשות משהו יחד.',
-        ]
-      : [
-          'A suggestion to do something.',
-          '"Shall we (do something)?"',
-          'This spoken form is used when you address someone',
-          'to suggest doing something together.',
-        ]
-  const grammarExplanationLines = grammarExplanation?.text
-    ?.split('\n')
-    .map((line) => line.trim())
-    .filter((line) => line.length > 0) ?? fallbackGrammarExplanationLines
+  const serverGrammarExplanationLines = grammarExplanation
+    ? toTextLines(grammarExplanation.text)
+    : []
+  const grammarExplanationLines =
+    serverGrammarExplanationLines.length > 0
+      ? serverGrammarExplanationLines
+      : grammarPracticeDemo?.explanationLines(contentLanguage) ?? []
   const grammarExplanationDir = grammarExplanation
     ? contentTextDirection(toContentLanguage(grammarExplanation.lang))
     : contentTextDirection(contentLanguage)
-  const fallbackNextGrammarExamples: NextGrammarExampleMessage[] = [
-    {
-      id: 'proposal',
-      side: 'left',
-      translation:
-        contentLanguage === 'he'
-          ? 'האם נאכל יחד צהריים?'
-          : 'Shall we eat lunch together?',
-      tokens: [
-        { text: '같이', vocabId: 'together' },
-        { text: ' ', emphasis: 'medium' },
-        { text: '점심', vocabId: 'lunch' },
-        { text: '을 ', emphasis: 'medium' },
-        { text: '먹을까요?', grammarId: 'future-proposal', vocabId: 'eat', emphasis: 'semibold' },
-      ],
-    },
-    {
-      id: 'reply',
-      side: 'right',
-      translation:
-        contentLanguage === 'he'
-          ? 'כן, בוא/י נאכל יחד.'
-          : 'Yes, let’s eat together.',
-      tokens: [
-        { text: '네', vocabId: 'yes' },
-        { text: ', ', emphasis: 'medium' },
-        { text: '같이', vocabId: 'together' },
-        { text: ' ', emphasis: 'medium' },
-        { text: '먹어요.', grammarId: 'polite-ending', vocabId: 'eat' },
-      ],
-    },
-  ]
   // 서버가 이 섹션의 대화를 내려주면 레슨별 예문을 그대로 쓰고, 없을 때만 데모 예문으로 폴백한다.
   // 서버 예문은 annotation API(unit) 매칭 정보를 들고 있어 Mark Grammar / Mark Vocab
   // 하이라이트가 annotation 범위 그대로 붙는다.
@@ -845,28 +620,20 @@ function GrammarPracticePage({
     }),
   )
   const nextGrammarExamples =
-    serverNextGrammarExamples.length > 0 ? serverNextGrammarExamples : fallbackNextGrammarExamples
-  const fallbackGrammarGridItems = ['', 'V -ㄹ까요?', '가다', '갈까요?', '', 'V-을까요?', '먹다', '먹을까요?']
-  // 서버 표가 있으면 헤더/행 그대로 표를 그리고, 없을 때만 데모 그리드로 폴백한다.
+    serverNextGrammarExamples.length > 0
+      ? serverNextGrammarExamples
+      : grammarPracticeDemo?.nextGrammarExamples(contentLanguage) ?? []
+  // 서버 표가 있으면 헤더/행 그대로 표를 그린다.
+  // 표가 없으면 운영에서는 아무것도 그리지 않고, 개발 서버에서만 시안 그리드를 보여 준다.
   const grammarTable = toGrammarTable(grammarContent?.table)
-  const nextGrammarNotes: Record<NextGrammarNoteId, { title: string; description: string }> = {
-    'future-proposal': {
-      title: '-(으)ㄹ까요?',
-      description:
-        '-(으)ㄹ까요? is used to suggest doing something together or to ask someone’s opinion in a polite way. Use -ㄹ까요? after a vowel or ㄹ, and -을까요? after other final consonants.',
-    },
-    'polite-ending': {
-      title: '-아/어/해요',
-      description:
-        '아요/어요/해요 is a polite informal sentence ending used in everyday conversations with people you’re not very close to, but in casual settings. Use -아요 after ㅏ/ㅗ vowels, -어요 after other vowels, and -해요 with 하다 verbs.',
-    },
-  }
-  const nextGrammarVocabNotes: Record<NextGrammarVocabId, { title: string; description: string }> = {
-    yes: { title: '네', description: 'yes' },
-    together: { title: '같이', description: 'together' },
-    lunch: { title: '점심', description: 'lunch' },
-    eat: { title: '먹다', description: 'to eat' },
-  }
+  const demoGrammarGridItems =
+    grammarTable === null ? grammarPracticeDemo?.grammarGridItems ?? null : null
+  // 아래 두 노트는 데모 예문의 토큰 마크 전용이다. 운영 예문은 annotation API 로 팝업을 띄운다.
+  const nextGrammarNotes: Record<NextGrammarNoteId, { title: string; description: string }> | null =
+    grammarPracticeDemo?.grammarNotes ?? null
+  const nextGrammarVocabNotes:
+    | Record<NextGrammarVocabId, { title: string; description: string }>
+    | null = grammarPracticeDemo?.vocabNotes ?? null
 
   const toggleShowGrammar = () => {
     setMarkMode((current) => (current === 'GRAMMAR' ? null : 'GRAMMAR'))
@@ -1007,10 +774,8 @@ function GrammarPracticePage({
     setActiveNextGrammarDialog(null)
     nextGrammarLessonRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' })
   }
-  const resetPracticeFlow = () => {
-    setChoiceItemIndex(0)
-    setFillItemIndex(0)
-    setMakeItemIndex(0)
+  // 한 문항을 끝내고 다음 문항/단계로 넘어갈 때 입력과 채점 결과를 비운다.
+  const resetPracticeAnswers = () => {
     setSelectedAnswer('')
     setRevealedAnswers([])
     setChoiceFeedback(null)
@@ -1019,9 +784,21 @@ function GrammarPracticePage({
     setMakeSentenceAnswer('')
     setSubmittedMakeSentenceAnswer('')
     setServerGradedAnswers({})
-    setFillGrade(null)
-    setMakeGrade(null)
+    setTextGrade(null)
   }
+  const resetPracticeFlow = () => {
+    setPracticeItemCursor(0)
+    resetPracticeAnswers()
+  }
+  // 다음 연습 단계로 이동한다. 남은 단계가 없으면 마무리(review) 화면으로 넘어간다.
+  const goToNextPracticeStage = () => {
+    const nextStage = currentStageIndex >= 0 ? practiceStages[currentStageIndex + 1] : undefined
+    setPracticeItemCursor(0)
+    resetPracticeAnswers()
+    setPracticeStep(nextStage ? toStageEntryStep(nextStage, false) : 'review')
+  }
+
+
   const isNextGrammarDialogActive = (
     kind: 'grammar' | 'vocab',
     id: NextGrammarNoteId | NextGrammarVocabId,
@@ -1098,12 +875,9 @@ function GrammarPracticePage({
     submittedTypedAnswer,
     makeSentenceAnswer,
     submittedMakeSentenceAnswer,
-    choiceItemIndex,
-    fillItemIndex,
-    makeItemIndex,
+    practiceItemIndex: practiceItemCursor,
     serverGradedAnswers,
-    fillGrade,
-    makeGrade,
+    textGrade,
     readingQuestionIndex,
     readingAnswers,
     readingBlankAnswers,
@@ -1120,12 +894,9 @@ function GrammarPracticePage({
     setSubmittedTypedAnswer(snapshot.submittedTypedAnswer)
     setMakeSentenceAnswer(snapshot.makeSentenceAnswer)
     setSubmittedMakeSentenceAnswer(snapshot.submittedMakeSentenceAnswer)
-    setChoiceItemIndex(snapshot.choiceItemIndex)
-    setFillItemIndex(snapshot.fillItemIndex)
-    setMakeItemIndex(snapshot.makeItemIndex)
+    setPracticeItemCursor(snapshot.practiceItemIndex)
     setServerGradedAnswers(snapshot.serverGradedAnswers)
-    setFillGrade(snapshot.fillGrade)
-    setMakeGrade(snapshot.makeGrade)
+    setTextGrade(snapshot.textGrade)
     setReadingQuestionIndex(snapshot.readingQuestionIndex)
     setReadingAnswers(snapshot.readingAnswers)
     setReadingBlankAnswers(snapshot.readingBlankAnswers)
@@ -1160,58 +931,67 @@ function GrammarPracticePage({
     onBack()
   }
 
+  // 지금 문항을 채점한다. 문항에 정답이 실려 있으면(자료 연습/문항 API 응답) 바로 판정하고,
+  // 정답이 없고 문항 API 문항이면 채점 API 를 부른다. 둘 다 아니면 채점하지 않는다.
+  //
+  // 자유 작문(FREE)은 예외다. 문항 목록의 answer 도, 채점 API 의 correctAnswer 도
+  // 유일한 정답이 아니라 예시 문장이라 Exact match 로 정/오답을 매기지 않고 예시만 보여 준다.
+  const gradePracticeAnswer = async (
+    item: PracticeItemModel,
+    answer: string,
+  ): Promise<TextAnswerGrade | null> => {
+    const isSample = isSampleAnswerItem(item)
+
+    if (item.answers.length > 0) {
+      return {
+        answer,
+        correct: isSample ? false : matchesPracticeAnswer(item, answer),
+        correctAnswer: item.answers[0],
+        isSample,
+      }
+    }
+
+    if (item.questionId === null || sectionId === null) {
+      // 예시 문장조차 없는 자유 작문은 제출만으로 끝낸다(다음으로 넘어갈 수 있게 한다).
+      return item.kind === 'free' ? { answer, correct: false, isSample: true } : null
+    }
+
+    try {
+      const result = await checkAnswer.mutateAsync({
+        sectionId,
+        payload: { questionId: item.questionId, userAnswer: answer },
+      })
+      // FREE 는 응답의 correct 를 판정으로 쓰지 않는다(항상 true 로 오고 correctAnswer 는 예시다).
+      const isSampleResult = isSample || item.kind === 'free'
+      return {
+        answer,
+        correct: isSampleResult ? false : Boolean(result?.correct),
+        correctAnswer: result?.correctAnswer,
+        isSample: isSampleResult,
+      }
+    } catch {
+      // 채점 요청 실패는 오답으로 표시하지 않는다.
+      return item.kind === 'free' ? { answer, correct: false, isSample: true } : null
+    }
+  }
+
   const handleChoiceOptionClick = async (option: string) => {
+    if (activePractice === null) return
+
     pushHistory()
     setSelectedAnswer(option)
     setChoiceFeedback(null)
     setRevealedAnswers((prev) => (prev.includes(option) ? prev : [...prev, option]))
 
-    // 자료 연습 문항에는 정답이 함께 실려 있어 채점 API 없이 바로 판정한다.
-    if (activeChoicePractice) {
-      const isCorrectChoice = matchesPracticeAnswer(activeChoicePractice, option)
-      setServerGradedAnswers((prev) => ({ ...prev, [option]: isCorrectChoice }))
-      setChoiceFeedback({
-        answer: option,
-        result: isCorrectChoice ? 'correct' : 'wrong',
-        phase: 'flash',
-      })
-      return
-    }
+    const grade = await gradePracticeAnswer(activePractice, option)
+    if (grade === null) return
 
-    if (!firstMcq) {
-      const isCorrectChoice = option === fallbackCorrectChoice
-      setServerGradedAnswers((prev) => ({
-        ...prev,
-        [option]: isCorrectChoice,
-      }))
-      setChoiceFeedback({ answer: option, result: isCorrectChoice ? 'correct' : 'wrong', phase: 'flash' })
-      return
-    }
-
-    // 문항에 정답이 함께 내려오면 채점 API를 기다리지 않고 바로 판정한다.
-    if (firstMcq.answer) {
-      const isCorrectChoice = option.trim() === firstMcq.answer.trim()
-      setServerGradedAnswers((prev) => ({ ...prev, [option]: isCorrectChoice }))
-      setChoiceFeedback({ answer: option, result: isCorrectChoice ? 'correct' : 'wrong', phase: 'flash' })
-      return
-    }
-
-    if (sectionId === null) return
-
-    try {
-      const result = await checkAnswer.mutateAsync({
-        sectionId,
-        payload: { questionId: firstMcq.id, userAnswer: option },
-      })
-      const isCorrectChoice = Boolean(result?.correct)
-      setServerGradedAnswers((prev) => ({
-        ...prev,
-        [option]: isCorrectChoice,
-      }))
-      setChoiceFeedback({ answer: option, result: isCorrectChoice ? 'correct' : 'wrong', phase: 'flash' })
-    } catch {
-      // Keep network/server failures separate from graded wrong answers.
-    }
+    setServerGradedAnswers((prev) => ({ ...prev, [option]: grade.correct }))
+    setChoiceFeedback({
+      answer: option,
+      result: grade.correct ? 'correct' : 'wrong',
+      phase: 'flash',
+    })
   }
 
   const handleTextAnswerSubmit = async (kind: 'fill' | 'make', rawAnswer: string) => {
@@ -1219,61 +999,10 @@ function GrammarPracticePage({
     if (kind === 'fill') setSubmittedTypedAnswer(answer)
     else setSubmittedMakeSentenceAnswer(answer)
 
-    if (answer.length === 0) return
+    if (answer.length === 0 || activePractice === null) return
 
-    const practiceItem = kind === 'fill' ? activeFillPractice : activeMakePractice
-    if (practiceItem) {
-      const grade: TextAnswerGrade = {
-        answer,
-        correct: matchesPracticeAnswer(practiceItem, answer),
-        correctAnswer: practiceItem.answers[0],
-      }
-      if (kind === 'fill') setFillGrade(grade)
-      else setMakeGrade(grade)
-      return
-    }
-
-    const question = kind === 'fill' ? fillQuestion : makeQuestion
-    if (!question) {
-      const correctAnswer = kind === 'fill' ? fillCorrectAnswer : makeCorrectAnswer
-      const grade: TextAnswerGrade = {
-        answer,
-        correct: normalizeAnswerText(answer) === normalizeAnswerText(correctAnswer),
-        correctAnswer,
-      }
-      if (kind === 'fill') setFillGrade(grade)
-      else setMakeGrade(grade)
-      return
-    }
-
-    if (question.answer) {
-      const grade: TextAnswerGrade = {
-        answer,
-        correct: answer === question.answer.trim(),
-        correctAnswer: question.answer,
-      }
-      if (kind === 'fill') setFillGrade(grade)
-      else setMakeGrade(grade)
-      return
-    }
-
-    if (sectionId === null) return
-
-    try {
-      const result = await checkAnswer.mutateAsync({
-        sectionId,
-        payload: { questionId: question.id, userAnswer: answer },
-      })
-      const grade: TextAnswerGrade = {
-        answer,
-        correct: Boolean(result?.correct),
-        correctAnswer: result?.correctAnswer,
-      }
-      if (kind === 'fill') setFillGrade(grade)
-      else setMakeGrade(grade)
-    } catch {
-      // 채점 요청 실패는 오답으로 표시하지 않는다.
-    }
+    const grade = await gradePracticeAnswer(activePractice, answer)
+    if (grade !== null) setTextGrade(grade)
   }
 
   const handleReadingAnswerChange = async (
@@ -1284,6 +1013,9 @@ function GrammarPracticePage({
     setReadingAnswers((prev) => ({ ...prev, [index]: answer }))
 
     if (answer.trim().length === 0) return
+
+    // FREE 는 answer 가 예시 문장이라 Exact match 로 채점하지 않고 정/오답 표시도 하지 않는다.
+    if (question.type === 'free') return
 
     // 문항에 정답이 함께 오면 바로 채점한다.
     if (question.answer) {
@@ -1322,6 +1054,9 @@ function GrammarPracticePage({
     })
 
     if (answer.trim().length === 0) return
+
+    // FREE 는 answer 가 예시 문장이라 Exact match 로 채점하지 않고 정/오답 표시도 하지 않는다.
+    if (question.type === 'free') return
 
     if (question.answer) {
       setListeningGradedAnswers((prev) => ({
@@ -1532,8 +1267,8 @@ function GrammarPracticePage({
               </svg>
             </button>
             <h1 className="grammar-practice-title">
-              {isNextGrammarStep || isNextGrammarRulesStep
-                ? grammarContent?.title || '을까요? 1)'
+              {isNextGrammarStep
+                ? grammarContent?.title || grammarPracticeDemo?.sectionTitle || 'Grammar'
                 : isListeningStep
                 ? 'Listening'
                 : isReadingStep
@@ -1543,7 +1278,7 @@ function GrammarPracticePage({
           </header>
         )}
 
-        {isFillIntroStep || isMakeIntroStep || isReviewStep || isReadingStep || isListeningStep || isNextGrammarStep || isNextGrammarRulesStep ? null : (
+        {!showPracticeChrome ? null : (
           <div className="grammar-practice-progress" role="list" aria-label="grammar practice progress">
             <span className="grammar-practice-progress-track" aria-hidden="true" />
             <span className="grammar-practice-progress-fill" style={{ width: '17.5%' }} aria-hidden="true" />
@@ -1561,9 +1296,15 @@ function GrammarPracticePage({
           </div>
         )}
 
-        {isFillIntroStep || isMakeIntroStep || isReviewStep || isReadingStep || isListeningStep || isNextGrammarStep || isNextGrammarRulesStep ? null : (
+        {!showPracticeChrome ? null : (
           <p className="grammar-practice-guide">
-            {isMakeStep ? 'Make your own sentence.' : isFillStep ? 'Fill in the blanks.' : 'Choose the correct answer.'}
+            {isMakeStep
+              ? 'Make your own sentence.'
+              : isFillStep
+              ? 'Fill in the blanks.'
+              : isCardsStep
+              ? 'Tap each card to check the meaning.'
+              : 'Choose the correct answer.'}
           </p>
         )}
 
@@ -1576,7 +1317,8 @@ function GrammarPracticePage({
               {activePractice.fixedQuestion ? (
                 <p className="grammar-practice-practice-question">{activePractice.fixedQuestion}</p>
               ) : null}
-              {practiceItemCount > 1 ? (
+              {/* 카드 연습은 한 화면에 카드를 모두 펼치므로 문항 진행 점을 그리지 않는다. */}
+              {practiceItemCount > 1 && !isCardsStep ? (
                 <div
                   className="grammar-practice-practice-dots"
                   role="list"
@@ -1759,13 +1501,23 @@ function GrammarPracticePage({
 
             <section className="grammar-practice-next-grammar-section" ref={nextGrammarLessonRef}>
               <h2 className="grammar-practice-next-grammar-heading">Grammar explanation</h2>
-              <div className="grammar-practice-next-grammar-description" dir={grammarExplanationDir}>
-                {grammarExplanationLines.map((line, index) => (
-                  <p key={`${index}-${line}`} className="grammar-practice-next-grammar-description-line">
-                    {line}
-                  </p>
-                ))}
-              </div>
+              {isInitialMaterialsLoading ? (
+                <p className="grammar-practice-status">Loading...</p>
+              ) : grammarExplanationLines.length > 0 ? (
+                <div className="grammar-practice-next-grammar-description" dir={grammarExplanationDir}>
+                  {grammarExplanationLines.map((line, index) => (
+                    <p key={`${index}-${line}`} className="grammar-practice-next-grammar-description-line">
+                      {line}
+                    </p>
+                  ))}
+                </div>
+              ) : (
+                <p className="grammar-practice-status">
+                  {sectionLoadError
+                    ? sectionLoadError.message
+                    : '아직 이 문법의 설명이 준비되지 않았어요.'}
+                </p>
+              )}
               {grammarTable ? (
                 <table className="grammar-practice-next-grammar-table">
                   {grammarTable.headers.length > 0 ? (
@@ -1796,9 +1548,9 @@ function GrammarPracticePage({
                     ))}
                   </tbody>
                 </table>
-              ) : (
+              ) : demoGrammarGridItems ? (
                 <div className="grammar-practice-next-grammar-grid" aria-hidden="true">
-                  {fallbackGrammarGridItems.map((item, index) => (
+                  {demoGrammarGridItems.map((item, index) => (
                     <span
                       key={`${item}-${index}`}
                       className={`grammar-practice-next-grammar-grid-box ${
@@ -1813,9 +1565,10 @@ function GrammarPracticePage({
                     </span>
                   ))}
                 </div>
-              )}
+              ) : null}
             </section>
 
+            {nextGrammarExamples.length > 0 ? (
             <section className="grammar-practice-next-grammar-examples-section">
               <h2 className="grammar-practice-next-grammar-heading">Examples</h2>
               <div className="grammar-practice-next-grammar-hero-row">
@@ -1873,25 +1626,28 @@ function GrammarPracticePage({
                             </div>
                           ) : null}
                         </div>
-                        <button
-                          type="button"
-                          className="grammar-practice-next-grammar-translation-toggle"
-                          onClick={() =>
-                            setVisibleExampleTranslations((prev) => ({
-                              ...prev,
-                              [example.id]: !prev[example.id],
-                            }))
-                          }
-                          aria-label="번역 보기"
-                        >
-                          <img src={vectorIcon} alt="" className="grammar-practice-next-grammar-translation-mark" aria-hidden="true" />
-                        </button>
+                        {example.translation.length > 0 ? (
+                          <button
+                            type="button"
+                            className="grammar-practice-next-grammar-translation-toggle"
+                            onClick={() =>
+                              setVisibleExampleTranslations((prev) => ({
+                                ...prev,
+                                [example.id]: !prev[example.id],
+                              }))
+                            }
+                            aria-label="번역 보기"
+                          >
+                            <img src={vectorIcon} alt="" className="grammar-practice-next-grammar-translation-mark" aria-hidden="true" />
+                          </button>
+                        ) : null}
                       </div>
                     </div>
                   </div>
                 ))}
               </div>
             </section>
+            ) : null}
 
             {/* EXPLANATION_ONLY 로 이동해 온 화면에서는 하단 BACK/NEXT 를 쓸 수 없다. */}
             <div className="grammar-practice-next-grammar-actions">
@@ -1910,62 +1666,15 @@ function GrammarPracticePage({
                 onClick={() => {
                   pushHistory()
                   setActiveNextGrammarDialog(null)
-                  setPracticeStep('next-grammar-rules')
+                  resetPracticeFlow()
+                  // 실제로 존재하는 첫 연습 단계로 넘어간다. MCQ 가 없으면 choice 화면은 건너뛴다.
+                  setPracticeStep(firstPracticeStep ?? 'review')
                 }}
               >
                 NEXT
               </button>
             </div>
 
-          </section>
-        ) : isNextGrammarRulesStep ? (
-          <section className="grammar-practice-next-grammar-rules-screen">
-            <h2 className="grammar-practice-next-grammar-rules-heading">Grammar explanation</h2>
-            <div className="grammar-practice-next-grammar-rules-english">
-              <div className="grammar-practice-next-grammar-rules-english-row">
-                <span className="grammar-practice-next-grammar-rules-bullet" aria-hidden="true">•</span>
-                <p className="grammar-practice-next-grammar-rules-english-line">This form is used only in spoken language</p>
-              </div>
-              <div className="grammar-practice-next-grammar-rules-english-row">
-                <span className="grammar-practice-next-grammar-rules-bullet" aria-hidden="true">•</span>
-                <p className="grammar-practice-next-grammar-rules-english-line">When this form appears, it necessarily refers to two people</p>
-              </div>
-              <div className="grammar-practice-next-grammar-rules-english-row">
-                <span className="grammar-practice-next-grammar-rules-bullet" aria-hidden="true">•</span>
-                <p className="grammar-practice-next-grammar-rules-english-line">The syllable -까 appears in question forms, therefore this is a question form only</p>
-              </div>
-              <div className="grammar-practice-next-grammar-rules-english-row">
-                <span className="grammar-practice-next-grammar-rules-bullet" aria-hidden="true">•</span>
-                <p className="grammar-practice-next-grammar-rules-english-line">It is attached only to verbs (doing something together)</p>
-              </div>
-              <div className="grammar-practice-next-grammar-rules-english-row">
-                <span className="grammar-practice-next-grammar-rules-bullet" aria-hidden="true">•</span>
-                <p className="grammar-practice-next-grammar-rules-english-line">The word 같이 ("together") can be added or omitted, and the meaning remains the same</p>
-              </div>
-            </div>
-            <div className="grammar-practice-next-grammar-rules-character-wrap" aria-hidden="true">
-              <img src={rulesImage} alt="" className="grammar-practice-next-grammar-rules-character" />
-            </div>
-            <div className="grammar-practice-next-grammar-actions">
-              <button
-                type="button"
-                className="grammar-practice-next-grammar-action-button grammar-practice-next-grammar-action-button-back"
-                onClick={handleBackPress}
-              >
-                BACK
-              </button>
-              <button
-                type="button"
-                className="grammar-practice-next-grammar-action-button"
-                onClick={() => {
-                  pushHistory()
-                  resetPracticeFlow()
-                  setPracticeStep('choice')
-                }}
-              >
-                NEXT
-              </button>
-            </div>
           </section>
         ) : isListeningStep ? (
           <section className="grammar-practice-listening-screen grammar-practice-listening-screen-script-visible">
@@ -2035,17 +1744,28 @@ function GrammarPracticePage({
                       })}
                     </p>
                   ))
+                ) : grammarPracticeDemo ? (
+                  grammarPracticeDemo.listeningScript.map((line, index) => (
+                    <p
+                      key={`${index}-${line.text}`}
+                      className={`grammar-practice-listening-script-line ${
+                        line.indented ? 'grammar-practice-listening-script-line-indented' : ''
+                      }`}
+                    >
+                      {line.speaker ? (
+                        <>
+                          <span className="grammar-practice-listening-script-speaker">{line.speaker}</span>{' '}
+                        </>
+                      ) : null}
+                      {line.text}
+                    </p>
+                  ))
                 ) : (
-                  <>
-                    <p className="grammar-practice-listening-script-line"><span className="grammar-practice-listening-script-speaker">남자</span> 토요일 몇 시에 만날까요?</p>
-                    <p className="grammar-practice-listening-script-line"><span className="grammar-practice-listening-script-speaker">여자</span> 2시나 3시에 만나요.</p>
-                    <p className="grammar-practice-listening-script-line"><span className="grammar-practice-listening-script-speaker">남자</span> 그럼 2시에 만나요.</p>
-                    <p className="grammar-practice-listening-script-line grammar-practice-listening-script-line-indented">그런데 어디에서 만날까요?</p>
-                    <p className="grammar-practice-listening-script-line"><span className="grammar-practice-listening-script-speaker">여자</span> 백화점 앞에서 만날까요?</p>
-                    <p className="grammar-practice-listening-script-line"><span className="grammar-practice-listening-script-speaker">남자</span> 백화점 앞에는 사람이 많아요.</p>
-                    <p className="grammar-practice-listening-script-line grammar-practice-listening-script-line-indented">2시에 서점 앞에서 만나요.</p>
-                    <p className="grammar-practice-listening-script-line"><span className="grammar-practice-listening-script-speaker">여자</span> 네, 알았어요.</p>
-                  </>
+                  <p className="grammar-practice-status">
+                    {sectionLoadError
+                      ? sectionLoadError.message
+                      : '아직 이 수업의 듣기 대본이 준비되지 않았어요.'}
+                  </p>
                 )}
               </section>
               <div
@@ -2196,6 +1916,13 @@ function GrammarPracticePage({
                   })}
                 </div>
               </div>
+              {!isInitialQuestionsLoading && listeningQuestions.length === 0 ? (
+                <p className="grammar-practice-status">
+                  {sectionLoadError
+                    ? sectionLoadError.message
+                    : '이 수업에는 듣기 문제가 없어요. 대본을 확인한 뒤 다음으로 넘어가세요.'}
+                </p>
+              ) : null}
               <div className="grammar-practice-listening-dots" aria-label="listening question progress">
                 {listeningQuestions.map((question, index) => (
                   <span
@@ -2267,30 +1994,32 @@ function GrammarPracticePage({
                     {renderAnnotatedLineText(model.source)}
                   </p>
                 ))
+              ) : isInitialMaterialsLoading ? (
+                <p className="grammar-practice-status">Loading...</p>
+              ) : grammarPracticeDemo ? (
+                grammarPracticeDemo.readingScript.map((line, index) => (
+                  <p
+                    key={`${index}-${line.text}`}
+                    className={`grammar-practice-reading-line ${
+                      line.indented ? 'grammar-practice-reading-line-indented' : ''
+                    }`}
+                  >
+                    {line.speaker ? (
+                      <>
+                        <span className={`grammar-practice-reading-name ${showVocab ? 'is-visible' : ''}`}>
+                          {line.speaker}
+                        </span>{' '}
+                      </>
+                    ) : null}
+                    {line.text}
+                  </p>
+                ))
               ) : (
-                <>
-                  <p className="grammar-practice-reading-line">
-                    <span className={`grammar-practice-reading-name ${showVocab ? 'is-visible' : ''}`}>건우</span>{' '}
-                    마리 씨, 오늘 같이 영화를 볼까요?
-                  </p>
-                  <p className="grammar-practice-reading-line">
-                    <span className={`grammar-practice-reading-name ${showVocab ? 'is-visible' : ''}`}>마리</span>{' '}
-                    미안해요. 오늘은 회의가 있어요.
-                  </p>
-                  <p className="grammar-practice-reading-line grammar-practice-reading-line-indented">그래서 바빠요.</p>
-                  <p className="grammar-practice-reading-line">
-                    <span className={`grammar-practice-reading-name ${showVocab ? 'is-visible' : ''}`}>건우</span> 언제 시간이 있어요?
-                  </p>
-                  <p className="grammar-practice-reading-line">
-                    <span className={`grammar-practice-reading-name ${showVocab ? 'is-visible' : ''}`}>마리</span> 저는 토요일이나 일요일이 좋아요.
-                  </p>
-                  <p className="grammar-practice-reading-line">
-                    <span className={`grammar-practice-reading-name ${showVocab ? 'is-visible' : ''}`}>건우</span> 그럼 토요일에 만날까요?
-                  </p>
-                  <p className="grammar-practice-reading-line">
-                    <span className={`grammar-practice-reading-name ${showVocab ? 'is-visible' : ''}`}>마리</span> 네, 좋아요. 토요일에 만나요.
-                  </p>
-                </>
+                <p className="grammar-practice-status">
+                  {sectionLoadError
+                    ? sectionLoadError.message
+                    : '아직 이 수업의 지문이 준비되지 않았어요.'}
+                </p>
               )}
             </section>
             <div
@@ -2371,7 +2100,9 @@ function GrammarPracticePage({
                       ) : null}
                       <div
                         className={`grammar-practice-reading-question-card ${
-                          question.type === 'blank' ? 'grammar-practice-reading-question-card-blank' : ''
+                          question.type === 'blank' || question.type === 'free'
+                            ? 'grammar-practice-reading-question-card-blank'
+                            : ''
                         }`}
                       >
                         <p className="grammar-practice-reading-question-title">{question.title}</p>
@@ -2426,7 +2157,7 @@ function GrammarPracticePage({
                               }
                             />
                           </div>
-                        ) : (
+                        ) : grammarPracticeDemo ? (
                           <div className="grammar-practice-reading-blank-group">
                             <p className="grammar-practice-reading-blank-line">
                               오늘은
@@ -2465,13 +2196,20 @@ function GrammarPracticePage({
                               .
                             </p>
                           </div>
-                        )}
+                        ) : null}
                       </div>
                     </section>
                   )
                 })}
               </div>
             </div>
+            {!isInitialQuestionsLoading && readingQuestions.length === 0 ? (
+              <p className="grammar-practice-status">
+                {sectionLoadError
+                  ? sectionLoadError.message
+                  : '이 수업에는 읽기 문제가 없어요. 지문을 확인한 뒤 다음으로 넘어가세요.'}
+              </p>
+            ) : null}
             <div className="grammar-practice-reading-dots" aria-label="reading question progress">
               {readingQuestions.map((question, index) => (
                 <span
@@ -2496,6 +2234,76 @@ function GrammarPracticePage({
             >
               Next
             </button>
+          </section>
+        ) : showPracticeEmptyState ? (
+          // 연습 문제가 없거나 불러오지 못했을 때. 데모 문항으로 폴백하지 않는다.
+          <section className="grammar-practice-empty-state" aria-live="polite">
+            {isInitialSectionLoading ? (
+              <p className="grammar-practice-status">Loading...</p>
+            ) : (
+              <>
+                <p className="grammar-practice-empty-state-text">
+                  {sectionLoadError
+                    ? sectionLoadError.message
+                    : '아직 이 수업의 연습 문제가 준비되지 않았어요.'}
+                </p>
+                <div className="grammar-practice-empty-state-actions">
+                  {sectionLoadError ? (
+                    <button
+                      type="button"
+                      className="grammar-practice-empty-state-button"
+                      onClick={() => {
+                        void refetchMaterials()
+                        void refetchQuestions()
+                      }}
+                    >
+                      다시 시도
+                    </button>
+                  ) : null}
+                  <button
+                    type="button"
+                    className="grammar-practice-empty-state-button"
+                    onClick={() => {
+                      pushHistory()
+                      setPracticeStep('review')
+                    }}
+                  >
+                    수업 마치기
+                  </button>
+                </div>
+              </>
+            )}
+          </section>
+        ) : isCardsStep ? (
+          // 카드 뒤집기 연습. SectionQuestion 에는 없고 자료 practices(kind: cards)에만 있는 형태라
+          // 자료 데이터를 그대로 그린다.
+          <section className="grammar-practice-cards-screen" aria-label="card practice">
+            <div className="grammar-practice-cards-list" role="list">
+              {currentStageItems.map((card) => {
+                const isRevealed = revealedAnswers.includes(card.key)
+                return (
+                  <button
+                    key={card.key}
+                    type="button"
+                    role="listitem"
+                    className={`grammar-practice-card-item ${isRevealed ? 'is-revealed' : ''}`}
+                    aria-pressed={isRevealed}
+                    onClick={() =>
+                      setRevealedAnswers((prev) =>
+                        prev.includes(card.key)
+                          ? prev.filter((key) => key !== card.key)
+                          : [...prev, card.key],
+                      )
+                    }
+                  >
+                    <span className="grammar-practice-card-front">{card.prefix}</span>
+                    {isRevealed && card.cardBack ? (
+                      <span className="grammar-practice-card-back">{card.cardBack}</span>
+                    ) : null}
+                  </button>
+                )
+              })}
+            </div>
           </section>
         ) : !isReviewStep && isMakeStep ? (
           <>
@@ -2587,9 +2395,7 @@ function GrammarPracticePage({
             >
               <div className="grammar-practice-question-stack">
                 <div className="grammar-practice-question-row">
-                  <p className="grammar-practice-question-text">
-                    {activePractice ? activePractice.prefix : isFillStep ? fillPrompt : choicePrompt}
-                  </p>
+                  <p className="grammar-practice-question-text">{activePractice?.prefix ?? ''}</p>
                   <div className="grammar-practice-answer-column">
                     {isFillStep ? (
                       <input
@@ -2615,14 +2421,12 @@ function GrammarPracticePage({
                       </p>
                     ) : null}
                   </div>
-                  {activePractice ? (
-                    // 연습 문항은 빈칸 뒤 어미("예요.")까지 prompt 에 들어 있어 마침표를 따로 찍지 않는다.
-                    activePractice.suffix ? (
-                      <p className="grammar-practice-question-text">{activePractice.suffix}</p>
-                    ) : null
-                  ) : (
+                  {/* 연습 문항은 빈칸 뒤 어미("예요.")까지 prompt 에 들어 있어 마침표를 따로 찍지 않는다. */}
+                  {activePractice !== null && activePractice.suffix ? (
+                    <p className="grammar-practice-question-text">{activePractice.suffix}</p>
+                  ) : activePractice !== null && activePractice.questionId !== null ? (
                     <span className="grammar-practice-question-dot">.</span>
-                  )}
+                  ) : null}
                 </div>
               </div>
             </section>
@@ -2663,8 +2467,10 @@ function GrammarPracticePage({
             ) : (
               <>
                 <div className="grammar-practice-options" role="list">
-                  {questionsLoading && !firstMcq ? (
+                  {isInitialQuestionsLoading ? (
                     <p className="grammar-practice-status">Loading...</p>
+                  ) : choiceOptions.length === 0 ? (
+                    <p className="grammar-practice-status">보기가 준비되지 않은 문항이에요.</p>
                   ) : (
                     choiceOptions.map((option) => {
                       const wasRevealed = revealedAnswers.includes(option)
@@ -2749,7 +2555,7 @@ function GrammarPracticePage({
           </div>
         ) : null}
 
-        {isFillIntroStep || isMakeIntroStep || isReviewStep || isReadingStep || isListeningStep || isNextGrammarStep || isNextGrammarRulesStep ? null : (
+        {!showPracticeChrome ? null : (
           <button
             type="button"
             className={`grammar-practice-next-button ${isFillStep || isMakeStep ? 'grammar-practice-next-button-fill' : ''}`}
@@ -2760,46 +2566,17 @@ function GrammarPracticePage({
                 void handleTextAnswerSubmit(isMakeStep ? 'make' : 'fill', currentTextAnswer)
                 return
               }
-              if (!canMoveToNextPracticeStep) return
-              if (practiceStep === 'choice') {
-                pushHistory()
-                // 같은 단계에 남은 연습 문항이 있으면 다음 문항으로, 없으면 다음 단계로 넘어간다.
-                if (hasNextPracticeItem) {
-                  setChoiceItemIndex(choiceItemIndex + 1)
-                  setSelectedAnswer('')
-                  setRevealedAnswers([])
-                  setChoiceFeedback(null)
-                  setServerGradedAnswers({})
-                  return
-                }
-                setPracticeStep('fill-intro')
+              if (!canMoveToNextPracticeStep || currentStage === null) return
+
+              pushHistory()
+              // 같은 단계에 남은 연습 문항이 있으면 다음 문항으로, 없으면 다음 단계로 넘어간다.
+              // 카드 연습은 한 화면에 카드를 모두 펼치므로 바로 다음 단계로 넘어간다.
+              if (hasNextPracticeItem && !isCardsStep) {
+                setPracticeItemCursor(practiceItemIndex + 1)
+                resetPracticeAnswers()
                 return
               }
-              if (practiceStep === 'fill') {
-                pushHistory()
-                if (hasNextPracticeItem) {
-                  setFillItemIndex(fillItemIndex + 1)
-                  setTypedAnswer('')
-                  setSubmittedTypedAnswer('')
-                  setFillGrade(null)
-                  return
-                }
-                setPracticeStep('make-intro')
-                setMakeSentenceAnswer('')
-                setSubmittedMakeSentenceAnswer('')
-                return
-              }
-              if (practiceStep === 'make') {
-                pushHistory()
-                if (hasNextPracticeItem) {
-                  setMakeItemIndex(makeItemIndex + 1)
-                  setMakeSentenceAnswer('')
-                  setSubmittedMakeSentenceAnswer('')
-                  setMakeGrade(null)
-                  return
-                }
-                setPracticeStep('review')
-              }
+              goToNextPracticeStage()
             }}
           >
             Next
@@ -2914,32 +2691,38 @@ function GrammarPracticePage({
                       </>
                     )
                   })()
-                : (
-                  <>
-                    <div className="grammar-practice-next-grammar-note-header">
-                      <h3 id="next-grammar-note-title" className="grammar-practice-next-grammar-note-title">
-                        {activeNextGrammarDialog.kind === 'grammar'
-                          ? nextGrammarNotes[activeNextGrammarDialog.id].title
-                          : nextGrammarVocabNotes[activeNextGrammarDialog.id].title}
-                      </h3>
-                      <span className="grammar-practice-next-grammar-note-plus" aria-hidden="true" />
-                    </div>
-                    <p
-                      className={`grammar-practice-next-grammar-note-description ${
-                        activeNextGrammarDialog.kind === 'vocab' ? 'grammar-practice-next-grammar-note-description-vocab' : ''
-                      }`}
-                    >
-                      {activeNextGrammarDialog.kind === 'grammar'
-                        ? nextGrammarNotes[activeNextGrammarDialog.id].description
-                        : nextGrammarVocabNotes[activeNextGrammarDialog.id].description}
-                    </p>
-                    {activeNextGrammarDialog.kind === 'grammar' ? (
-                      <button type="button" className="grammar-practice-next-grammar-note-button" onClick={handleGoToNextGrammarLesson}>
-                        GO TO LESSON
-                      </button>
-                    ) : null}
-                  </>
-                )}
+                : (() => {
+                    // 데모 예문 전용 팝업. 운영 빌드에는 이 노트가 없어 팝업도 열리지 않는다.
+                    const dialog = activeNextGrammarDialog
+                    const note =
+                      dialog.kind === 'grammar'
+                        ? nextGrammarNotes?.[dialog.id] ?? null
+                        : nextGrammarVocabNotes?.[dialog.id] ?? null
+                    if (note === null) return null
+
+                    return (
+                      <>
+                        <div className="grammar-practice-next-grammar-note-header">
+                          <h3 id="next-grammar-note-title" className="grammar-practice-next-grammar-note-title">
+                            {note.title}
+                          </h3>
+                          <span className="grammar-practice-next-grammar-note-plus" aria-hidden="true" />
+                        </div>
+                        <p
+                          className={`grammar-practice-next-grammar-note-description ${
+                            dialog.kind === 'vocab' ? 'grammar-practice-next-grammar-note-description-vocab' : ''
+                          }`}
+                        >
+                          {note.description}
+                        </p>
+                        {dialog.kind === 'grammar' ? (
+                          <button type="button" className="grammar-practice-next-grammar-note-button" onClick={handleGoToNextGrammarLesson}>
+                            GO TO LESSON
+                          </button>
+                        ) : null}
+                      </>
+                    )
+                  })()}
             </div>
           </div>
         ) : null}
