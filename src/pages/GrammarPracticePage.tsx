@@ -18,13 +18,7 @@ import {
   pickDialogueTranslation,
   toContentLanguage,
 } from '../data/contentLanguage.ts'
-import type {
-  DialogueLine,
-  MaterialPracticeKind,
-  NextSection,
-  SectionMaterial,
-  SectionQuestion,
-} from '../types/section,types.ts'
+import type { DialogueLine, NextSection, SectionMaterial } from '../types/section,types.ts'
 import { useCheckSectionAnswer } from '../hooks/useCheckSectionAnswer.ts'
 import { useSaveSectionProgress } from '../hooks/useSaveSectionProgress.ts'
 import { useCreateScrap } from '../hooks/useCreateScrap.ts'
@@ -47,13 +41,9 @@ import type {
   MarkMode,
   SectionAnnotation,
 } from '../types/annotation.types.ts'
-import {
-  PRACTICE_STAGE_BY_KIND,
-  PRACTICE_STAGE_ORDER,
-} from '../types/grammarPractice.types.ts'
+import { PRACTICE_STAGE_ORDER } from '../types/grammarPractice.types.ts'
 import type {
   AnnotatedLineSource,
-  GrammarTableModel,
   NextGrammarExampleMessage,
   NextGrammarExampleToken,
   NextGrammarNoteId,
@@ -61,20 +51,27 @@ import type {
   PracticeItemModel,
   PracticeQuestionModel,
   PracticeStageId,
+  PracticeStep,
 } from '../types/grammarPractice.types.ts'
+import {
+  DEMO_PRACTICE_STAGES,
+  PRACTICE_STAGE_BY_STEP,
+  grammarPageByStep,
+  matchesPracticeAnswer,
+  mergePracticeItems,
+  resolvePracticeStep,
+  toGrammarTable,
+  toMaterialPracticeItems,
+  toPracticeQuestions,
+  toPracticeStages,
+  toQuestionPracticeItems,
+  toSentenceTokens,
+  toStageEntryStep,
+  toTextLines,
+} from '../data/grammarPracticeModel.ts'
 import { grammarPracticeDemo } from '../data/grammarPracticeDemo.ts'
 
-export type PracticeStep =
-  | 'choice'
-  | 'fill-intro'
-  | 'fill'
-  | 'cards'
-  | 'make-intro'
-  | 'make'
-  | 'review'
-  | 'reading'
-  | 'listening'
-  | 'next-grammar'
+export type { PracticeStep }
 
 interface GrammarPracticePageProps {
   /** 수업 내부 한 단계 뒤로. 되돌아갈 단계가 없으면 수업 밖으로 나간다. */
@@ -198,357 +195,6 @@ interface TextAnswerGrade {
   correctAnswer?: string
 }
 
-function toStringList(value: unknown): string[] {
-  if (!Array.isArray(value)) return []
-  return value
-    .filter((entry) => typeof entry === 'string' || typeof entry === 'number')
-    .map((entry) => String(entry))
-}
-
-// "1. 그것은 ____예요." -> { prefix: '그것은', suffix: '예요.' }
-// 번호와 빈칸 표기(밑줄 개수)가 문항마다 달라서 정규식으로 느슨하게 걷어낸다.
-function splitPracticePrompt(prompt: string): { prefix: string; suffix: string } {
-  const withoutNumber = (prompt ?? '').replace(/^\s*\d+\s*[.)]\s*/, '')
-  const blank = withoutNumber.match(/_{2,}/)
-  if (!blank || blank.index === undefined) {
-    return { prefix: withoutNumber.trim(), suffix: '' }
-  }
-  return {
-    prefix: withoutNumber.slice(0, blank.index).trim(),
-    suffix: withoutNumber.slice(blank.index + blank[0].length).trim(),
-  }
-}
-
-const MATERIAL_PRACTICE_KINDS: MaterialPracticeKind[] = ['choose', 'fill', 'free', 'cards']
-
-// 단계 -> 자료 kind. 문항 API 로만 만들어진 연습 문항에도 같은 kind 를 붙여 화면 분기를 통일한다.
-const STAGE_PRACTICE_KIND: Record<PracticeStageId, MaterialPracticeKind> = {
-  choice: 'choose',
-  fill: 'fill',
-  cards: 'cards',
-  make: 'free',
-}
-
-function toPracticeKind(value: string | undefined | null): MaterialPracticeKind | null {
-  const normalized = (value ?? '').trim().toLowerCase()
-  return (MATERIAL_PRACTICE_KINDS as string[]).includes(normalized)
-    ? (normalized as MaterialPracticeKind)
-    : null
-}
-
-function toTrimmedText(value: unknown): string {
-  return typeof value === 'string' ? value.trim() : ''
-}
-
-// 자료에 실린 연습 문항을 단계별로 펼친다. 블록(fixedQuestion + items) 순서를 그대로 유지해
-// choose 는 보기 선택, fill 은 빈칸, cards 는 카드 뒤집기, free 는 문장 만들기 단계로 이어 붙인다.
-function toMaterialPracticeItems(
-  materials: SectionMaterial[],
-  stage: PracticeStageId,
-): PracticeItemModel[] {
-  const items: PracticeItemModel[] = []
-
-  materials.forEach((material) => {
-    ;(material.contentText?.practices ?? []).forEach((practice, blockIndex) => {
-      const kind = toPracticeKind(practice?.kind)
-      if (kind === null || PRACTICE_STAGE_BY_KIND[kind] !== stage) return
-
-      ;(practice.items ?? []).forEach((item, itemIndex) => {
-        const answers = toStringList(item?.answers)
-        const sample = toTrimmedText(item?.sample)
-        const front = toTrimmedText(item?.front) || toTrimmedText(item?.prompt)
-        const back = toTrimmedText(item?.back) || toTrimmedText(item?.note) || sample
-        const { prefix, suffix } = splitPracticePrompt(toTrimmedText(item?.prompt) || front)
-
-        items.push({
-          key: `material-${material.id}-${kind}-${blockIndex}-${itemIndex}`,
-          stage,
-          kind,
-          // 자료 연습 문항은 정답이 함께 실려 있어 채점 API 를 쓰지 않는다.
-          questionId: null,
-          fixedQuestion: toTrimmedText(practice.fixedQuestion),
-          hasImagePlaceholder: practice.imagePlaceholder === true,
-          prefix: stage === 'cards' ? front : prefix,
-          suffix: stage === 'cards' ? '' : suffix,
-          options: toStringList(item?.options),
-          // 자유 작문(free)은 answers 없이 sample(모범 답안)만 온다.
-          answers: answers.length > 0 ? answers : sample.length > 0 ? [sample] : [],
-          isSampleAnswer: answers.length === 0 && sample.length > 0,
-          cardBack: back,
-        })
-      })
-    })
-  })
-
-  return items
-}
-
-// 문항 API 문항이 어떤 단계에 속하는지 정한다.
-// 서버 type 문자열이 섹션마다 달라서 키워드로 느슨하게 보고, 보기가 있으면 무조건 보기 선택 단계다.
-function toQuestionStage(question: SectionQuestion): PracticeStageId {
-  if ((question.options?.length ?? 0) > 0) return 'choice'
-  if (matchesQuestionType(question, ['MCQ', 'CHOICE'])) return 'choice'
-  if (matchesQuestionType(question, ['SENTENCE', 'MAKE', 'WRITE', 'COMPOSE', 'FREE'])) return 'make'
-  // BLANK/FILL/SHORT/WORD 를 포함해 타입을 알 수 없는 주관식은 모두 빈칸 단계로 본다.
-  return 'fill'
-}
-
-function toQuestionPracticeItems(
-  questions: SectionQuestion[],
-  stage: PracticeStageId,
-): PracticeItemModel[] {
-  return questions
-    .filter((question) => toQuestionStage(question) === stage)
-    .map((question) => {
-      const questionText = toTrimmedText(question.questionText)
-      const { prefix, suffix } = splitPracticePrompt(questionText)
-      const answer = toTrimmedText(question.answer)
-
-      return {
-        key: `question-${question.id}`,
-        stage,
-        kind: STAGE_PRACTICE_KIND[stage],
-        questionId: question.id,
-        fixedQuestion: '',
-        hasImagePlaceholder: false,
-        prefix,
-        suffix,
-        options: question.options ?? [],
-        answers: answer.length > 0 ? [answer] : [],
-        isSampleAnswer: false,
-        cardBack: '',
-      }
-    })
-}
-
-// 같은 문항이 자료와 문항 API 양쪽에 실려 있을 수 있어 문장/보기 기준으로 합친다.
-// 자료 쪽을 먼저 두되, 자료에 정답이 없으면 문항 API 의 정답/문항 id 를 채워 채점이 되게 한다.
-function mergePracticeItems(
-  materialItems: PracticeItemModel[],
-  questionItems: PracticeItemModel[],
-): PracticeItemModel[] {
-  const merged: PracticeItemModel[] = []
-  const indexBySignature = new Map<string, number>()
-
-  const signatureOf = (item: PracticeItemModel) =>
-    [
-      normalizeAnswerText(item.prefix),
-      normalizeAnswerText(item.suffix),
-      item.options.map(normalizeAnswerText).join('|'),
-    ].join('␟')
-
-  ;[...materialItems, ...questionItems].forEach((item) => {
-    const signature = signatureOf(item)
-    const existingIndex = indexBySignature.get(signature)
-    if (existingIndex === undefined) {
-      indexBySignature.set(signature, merged.length)
-      merged.push(item)
-      return
-    }
-
-    const existing = merged[existingIndex]
-    if (existing.answers.length === 0 && (item.answers.length > 0 || item.questionId !== null)) {
-      merged[existingIndex] = {
-        ...existing,
-        questionId: existing.questionId ?? item.questionId,
-        answers: item.answers,
-        isSampleAnswer: item.isSampleAnswer,
-      }
-    }
-  })
-
-  return merged
-}
-
-// 이 섹션에 실제로 존재하는 연습 단계만 순서대로 돌려준다.
-// 자료 practices 블록 순서를 그대로 흐름 순서로 쓰고, 자료에 없는 단계는
-// 문항 API 에 문항이 실제로 있을 때만 뒤에 덧붙인다.
-function toPracticeStages(
-  materials: SectionMaterial[],
-  questions: SectionQuestion[],
-): PracticeStageId[] {
-  const stages: PracticeStageId[] = []
-  const add = (stage: PracticeStageId) => {
-    if (!stages.includes(stage)) stages.push(stage)
-  }
-
-  materials.forEach((material) => {
-    ;(material.contentText?.practices ?? []).forEach((practice) => {
-      const kind = toPracticeKind(practice?.kind)
-      if (kind === null || (practice.items?.length ?? 0) === 0) return
-      add(PRACTICE_STAGE_BY_KIND[kind])
-    })
-  })
-
-  PRACTICE_STAGE_ORDER.forEach((stage) => {
-    if (questions.some((question) => toQuestionStage(question) === stage)) add(stage)
-  })
-
-  return stages
-}
-
-function normalizeAnswerText(value: string): string {
-  return value.replace(/\s+/g, ' ').trim()
-}
-
-function matchesPracticeAnswer(item: PracticeItemModel, answer: string): boolean {
-  const normalized = normalizeAnswerText(answer)
-  return item.answers.some((candidate) => normalizeAnswerText(candidate) === normalized)
-}
-
-// 행 객체의 키 순서. 서버 표는 headers 순서대로 condition -> form -> examples 를 채워 내려준다.
-// (예: headers ["받침","형태","예시"] / row { condition: "받침 O", form: "N이에요", examples: [...] })
-const TABLE_ROW_KEYS = ['condition', 'form', 'examples']
-
-function toTableCellText(value: unknown): string {
-  if (value === null || value === undefined) return ''
-  if (Array.isArray(value)) {
-    return value
-      .map(toTableCellText)
-      .filter((text) => text.length > 0)
-      .join('\n')
-  }
-  if (typeof value === 'string' || typeof value === 'number') return String(value)
-  return ''
-}
-
-function toTableRowCells(row: unknown): string[] {
-  if (Array.isArray(row)) return row.map(toTableCellText)
-  if (row && typeof row === 'object') {
-    const record = row as Record<string, unknown>
-    const knownKeys = TABLE_ROW_KEYS.filter((key) => key in record)
-    const extraKeys = Object.keys(record).filter((key) => !TABLE_ROW_KEYS.includes(key))
-    const orderedKeys = knownKeys.length > 0 ? [...knownKeys, ...extraKeys] : extraKeys
-    return orderedKeys.map((key) => toTableCellText(record[key]))
-  }
-  return [toTableCellText(row)]
-}
-
-// contentText.table 은 { headers, rows } 객체로 오고, 예전 목 데이터처럼 행 배열([[...], ...])로
-// 오는 경우도 있어 둘 다 받는다. 표로 그릴 게 없으면 null 을 돌려 기존 표를 그대로 쓰게 한다.
-function toGrammarTable(table: unknown): GrammarTableModel | null {
-  let headers: string[] = []
-  let rawRows: unknown[] = []
-
-  if (Array.isArray(table)) {
-    rawRows = table
-  } else if (table && typeof table === 'object') {
-    const record = table as Record<string, unknown>
-    headers = toStringList(record.headers)
-    rawRows = Array.isArray(record.rows) ? record.rows : []
-  } else {
-    return null
-  }
-
-  const rows = rawRows
-    .map(toTableRowCells)
-    .filter((cells) => cells.some((cell) => cell.length > 0))
-  if (rows.length === 0) return null
-
-  const columnCount = Math.max(headers.length, ...rows.map((cells) => cells.length), 0)
-  if (columnCount === 0) return null
-
-  const padRow = (cells: string[]) => Array.from({ length: columnCount }, (_, index) => cells[index] ?? '')
-
-  return {
-    headers: headers.length > 0 ? padRow(headers) : [],
-    rows: rows.map(padRow),
-  }
-}
-
-function toTextLines(value: string): string[] {
-  return value
-    .split('\n')
-    .map((line) => line.trim())
-    .filter((line) => line.length > 0)
-}
-
-function matchesQuestionType(question: SectionQuestion, keywords: string[]): boolean {
-  const type = (question.type ?? '').toUpperCase()
-  return keywords.some((keyword) => type.includes(keyword))
-}
-
-// 문장 만들기 단계에 보여줄 제시어. 서버가 "준호 / 커피 / 마시다" 처럼 구분자로 내려주면 쪼개고,
-// 아니면 문항 텍스트를 그대로 한 덩어리로 보여준다.
-function toSentenceTokens(questionText: string | undefined): string[] {
-  const tokens = (questionText ?? '')
-    .split(/[/,·|]/)
-    .map((token) => token.trim())
-    .filter((token) => token.length > 0)
-
-  return tokens.length > 0 ? tokens : []
-}
-
-function toPracticeQuestions(questions: SectionQuestion[]): PracticeQuestionModel[] {
-  return questions.map((question, index) => ({
-    questionId: question.id,
-    title: `Question ${index + 1}`,
-    prompt: question.questionText,
-    type: (question.options?.length ?? 0) > 0 ? 'choice' : 'blank',
-    options: question.options ?? [],
-    answer: question.answer,
-  }))
-}
-
-const grammarPageByStep: Partial<Record<PracticeStep, number>> = {
-  choice: 0,
-  'fill-intro': 1,
-  fill: 2,
-  'make-intro': 3,
-  make: 4,
-  review: 5,
-  'next-grammar': 6,
-  cards: 7,
-}
-
-const PRACTICE_STEP_BY_STAGE: Record<PracticeStageId, PracticeStep> = {
-  choice: 'choice',
-  fill: 'fill',
-  cards: 'cards',
-  make: 'make',
-}
-
-// 시작 화면("Well done! Now let's try something harder")은 앞 단계를 끝냈을 때만 의미가 있어서
-// 해당 단계가 흐름의 첫 단계면 건너뛴다.
-const PRACTICE_INTRO_STEP_BY_STAGE: Partial<Record<PracticeStageId, PracticeStep>> = {
-  fill: 'fill-intro',
-  make: 'make-intro',
-}
-
-const PRACTICE_STAGE_BY_STEP: Partial<Record<PracticeStep, PracticeStageId>> = {
-  choice: 'choice',
-  'fill-intro': 'fill',
-  fill: 'fill',
-  cards: 'cards',
-  'make-intro': 'make',
-  make: 'make',
-}
-
-// 서버 연습 데이터가 하나도 없을 때 개발 서버에서만 쓰는 시안 흐름.
-const DEMO_PRACTICE_STAGES: PracticeStageId[] = ['choice', 'fill', 'make']
-
-function toStageEntryStep(stage: PracticeStageId, isFirstStage: boolean): PracticeStep {
-  if (isFirstStage) return PRACTICE_STEP_BY_STAGE[stage]
-  return PRACTICE_INTRO_STEP_BY_STAGE[stage] ?? PRACTICE_STEP_BY_STAGE[stage]
-}
-
-// 실제로 존재하지 않는 단계에 머무르지 않도록 그릴 단계를 정한다.
-// MCQ 가 없는 섹션에서 'choice' 로 들어왔으면 첫 연습 단계(FILL/카드/자유 연습)로 바꾸고,
-// 흐름의 첫 단계에서는 "Well done!" 시작 화면을 건너뛴다.
-function resolvePracticeStep(
-  step: PracticeStep,
-  stages: PracticeStageId[],
-  isLoading: boolean,
-): PracticeStep {
-  const stage = PRACTICE_STAGE_BY_STEP[step]
-  if (stage === undefined || isLoading) return step
-
-  const stageIndex = stages.indexOf(stage)
-  // 단계가 아예 없으면 그대로 두고 빈 상태 안내를 그린다.
-  if (stageIndex < 0) return stages.length > 0 ? toStageEntryStep(stages[0], true) : step
-  return stageIndex === 0 ? PRACTICE_STEP_BY_STAGE[stage] : step
-}
-
 function GrammarPracticePage({
   onBack,
   onExit,
@@ -578,8 +224,25 @@ function GrammarPracticePage({
 
   const sectionQuestions = useMemo(() => questionsData?.questions ?? [], [questionsData])
 
+  // 문법 자료. type 문자열이 섹션마다 다르게 내려올 수 있어(GRAMMAR_TABLE / GRAMMAR / ...)
+  // 키워드로 느슨하게 찾고, 그래도 못 찾으면 설명·표·대화가 실린 자료 -> 첫 자료 순으로 쓴다.
+  // 여기서 null 로 두면 설명/표/예문이 전부 비어 보이기 때문에 폭넓게 받는다.
   const grammarMaterial = useMemo(() => {
-    return materialsData?.materials.find((m) => m.type === 'GRAMMAR_TABLE') ?? null
+    const materials = materialsData?.materials ?? []
+    if (materials.length === 0) return null
+
+    return (
+      materials.find((material) => (material.type ?? '').toUpperCase().includes('GRAMMAR')) ??
+      materials.find((material) => {
+        const content = material.contentText
+        return Boolean(
+          content?.table ||
+            (content?.explanations?.length ?? 0) > 0 ||
+            (content?.dialogues?.length ?? 0) > 0,
+        )
+      }) ??
+      materials[0]
+    )
   }, [materialsData])
   const grammarMaterialId = grammarMaterial?.id ?? null
   const grammarContent = grammarMaterial?.contentText ?? null
@@ -1629,7 +1292,8 @@ function GrammarPracticePage({
               {activePractice.fixedQuestion ? (
                 <p className="grammar-practice-practice-question">{activePractice.fixedQuestion}</p>
               ) : null}
-              {practiceItemCount > 1 ? (
+              {/* 카드 연습은 한 화면에 카드를 모두 펼치므로 문항 진행 점을 그리지 않는다. */}
+              {practiceItemCount > 1 && !isCardsStep ? (
                 <div
                   className="grammar-practice-practice-dots"
                   role="list"
@@ -2879,7 +2543,8 @@ function GrammarPracticePage({
 
               pushHistory()
               // 같은 단계에 남은 연습 문항이 있으면 다음 문항으로, 없으면 다음 단계로 넘어간다.
-              if (hasNextPracticeItem) {
+              // 카드 연습은 한 화면에 카드를 모두 펼치므로 바로 다음 단계로 넘어간다.
+              if (hasNextPracticeItem && !isCardsStep) {
                 setPracticeItemCursor(practiceItemIndex + 1)
                 resetPracticeAnswers()
                 return

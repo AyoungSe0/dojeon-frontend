@@ -36,11 +36,10 @@ export const isRtlContentLanguage = (language: ContentLanguage): boolean =>
 export const contentTextDirection = (language: ContentLanguage): 'rtl' | 'ltr' =>
   isRtlContentLanguage(language) ? 'rtl' : 'ltr'
 
-// 선택한 컨텐츠 언어 -> 기본(영어) 순으로 폴백한다.
-const withFallbackOrder = (language: ContentLanguage): ContentLanguage[] =>
-  language === DEFAULT_CONTENT_LANGUAGE
-    ? [DEFAULT_CONTENT_LANGUAGE]
-    : [language, DEFAULT_CONTENT_LANGUAGE]
+// mother language 로 고른 언어 하나만 쓴다.
+// 히브리어 계정은 한국어 + 히브리어, 영어 계정은 한국어 + 영어만 보여 줘야 하므로
+// 다른 번역 언어로는 절대 폴백하지 않는다(히브리어가 없다고 영어를 보여 주지 않는다).
+const withFallbackOrder = (language: ContentLanguage): ContentLanguage[] => [language]
 
 export const pickDialogueTranslation = (
   line: DialogueLine,
@@ -66,8 +65,9 @@ export const pickExplanation = (
     if (match) return match
   }
 
-  // 번역 항목이 하나도 없으면(ko만 내려온 경우 등) 첫 항목이라도 보여준다.
-  return explanations[0]
+  // 번역 대상이 아닌 언어(한국어 원문 등)는 어떤 사용자에게도 보여 줄 수 있다.
+  // 다른 mother language 번역으로는 폴백하지 않는다.
+  return explanations.find((explanation) => normalizeLanguageTag(explanation.lang) === null) ?? null
 }
 
 // 자료 설명은 explanations(언어별 배열) 또는 description(단일 문자열)로 온다.
