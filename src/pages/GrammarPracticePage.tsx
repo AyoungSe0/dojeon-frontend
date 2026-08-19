@@ -57,6 +57,7 @@ import {
   DEMO_PRACTICE_STAGES,
   PRACTICE_STAGE_BY_STEP,
   grammarPageByStep,
+  isSampleAnswerItem,
   matchesPracticeAnswer,
   mergePracticeItems,
   resolvePracticeStep,
@@ -193,6 +194,9 @@ interface TextAnswerGrade {
   answer: string
   correct: boolean
   correctAnswer?: string
+  // 자유 작문(FREE)처럼 정답이 하나로 정해지지 않는 문항.
+  // correctAnswer 는 예시 문장(sample)일 뿐이라 정/오답 판정에 쓰지 않는다.
+  isSample?: boolean
 }
 
 function GrammarPracticePage({
@@ -482,8 +486,11 @@ function GrammarPracticePage({
   const matchedTextGrade = textGrade && textGrade.answer === currentAnswer ? textGrade : null
   const correctAnswer = matchedTextGrade?.correctAnswer ?? activePractice?.answers[0] ?? ''
   const isAnswered = currentAnswer.length > 0
-  // free 연습은 정답이 하나로 정해지지 않고 sample(모범 답안)만 오므로 정/오답을 매기지 않는다.
-  const isFreeWritingPractice = activePractice?.kind === 'free' && activePractice.isSampleAnswer
+  // free 연습(자료 free 블록 / FREE 문항)은 정답이 하나로 정해지지 않고 sample(모범 답안)만
+  // 오므로 정/오답을 매기지 않는다. 채점 API 응답이 예시였을 때도 같게 본다.
+  const isFreeWritingPractice =
+    (activePractice?.kind === 'free' && activePractice.isSampleAnswer) ||
+    matchedTextGrade?.isSample === true
   const showMakeSample = isFreeWritingPractice && isAnswered && correctAnswer.length > 0
 
   let isCorrectAnswer: boolean
@@ -566,10 +573,10 @@ function GrammarPracticePage({
     !checkAnswer.isPending &&
     listeningQuestions.every(
       (question) => {
-        return (
-          (listeningAnswers[question.questionId] ?? '').trim().length > 0 &&
-          listeningGradedAnswers[question.questionId] !== undefined
-        )
+        const hasAnswer = (listeningAnswers[question.questionId] ?? '').trim().length > 0
+        // FREE 는 채점하지 않으므로 답을 쓰기만 하면 완료로 본다.
+        if (question.type === 'free') return hasAnswer
+        return hasAnswer && listeningGradedAnswers[question.questionId] !== undefined
       },
     )
   const listeningQuestionIndexForDisplay = Math.min(
@@ -926,33 +933,45 @@ function GrammarPracticePage({
 
   // 지금 문항을 채점한다. 문항에 정답이 실려 있으면(자료 연습/문항 API 응답) 바로 판정하고,
   // 정답이 없고 문항 API 문항이면 채점 API 를 부른다. 둘 다 아니면 채점하지 않는다.
+  //
+  // 자유 작문(FREE)은 예외다. 문항 목록의 answer 도, 채점 API 의 correctAnswer 도
+  // 유일한 정답이 아니라 예시 문장이라 Exact match 로 정/오답을 매기지 않고 예시만 보여 준다.
   const gradePracticeAnswer = async (
     item: PracticeItemModel,
     answer: string,
   ): Promise<TextAnswerGrade | null> => {
+    const isSample = isSampleAnswerItem(item)
+
     if (item.answers.length > 0) {
       return {
         answer,
-        correct: matchesPracticeAnswer(item, answer),
+        correct: isSample ? false : matchesPracticeAnswer(item, answer),
         correctAnswer: item.answers[0],
+        isSample,
       }
     }
 
-    if (item.questionId === null || sectionId === null) return null
+    if (item.questionId === null || sectionId === null) {
+      // 예시 문장조차 없는 자유 작문은 제출만으로 끝낸다(다음으로 넘어갈 수 있게 한다).
+      return item.kind === 'free' ? { answer, correct: false, isSample: true } : null
+    }
 
     try {
       const result = await checkAnswer.mutateAsync({
         sectionId,
         payload: { questionId: item.questionId, userAnswer: answer },
       })
+      // FREE 는 응답의 correct 를 판정으로 쓰지 않는다(항상 true 로 오고 correctAnswer 는 예시다).
+      const isSampleResult = isSample || item.kind === 'free'
       return {
         answer,
-        correct: Boolean(result?.correct),
+        correct: isSampleResult ? false : Boolean(result?.correct),
         correctAnswer: result?.correctAnswer,
+        isSample: isSampleResult,
       }
     } catch {
       // 채점 요청 실패는 오답으로 표시하지 않는다.
-      return null
+      return item.kind === 'free' ? { answer, correct: false, isSample: true } : null
     }
   }
 
@@ -995,6 +1014,9 @@ function GrammarPracticePage({
 
     if (answer.trim().length === 0) return
 
+    // FREE 는 answer 가 예시 문장이라 Exact match 로 채점하지 않고 정/오답 표시도 하지 않는다.
+    if (question.type === 'free') return
+
     // 문항에 정답이 함께 오면 바로 채점한다.
     if (question.answer) {
       const isCorrect = answer.trim() === question.answer.trim()
@@ -1032,6 +1054,9 @@ function GrammarPracticePage({
     })
 
     if (answer.trim().length === 0) return
+
+    // FREE 는 answer 가 예시 문장이라 Exact match 로 채점하지 않고 정/오답 표시도 하지 않는다.
+    if (question.type === 'free') return
 
     if (question.answer) {
       setListeningGradedAnswers((prev) => ({
@@ -2075,7 +2100,9 @@ function GrammarPracticePage({
                       ) : null}
                       <div
                         className={`grammar-practice-reading-question-card ${
-                          question.type === 'blank' ? 'grammar-practice-reading-question-card-blank' : ''
+                          question.type === 'blank' || question.type === 'free'
+                            ? 'grammar-practice-reading-question-card-blank'
+                            : ''
                         }`}
                       >
                         <p className="grammar-practice-reading-question-title">{question.title}</p>

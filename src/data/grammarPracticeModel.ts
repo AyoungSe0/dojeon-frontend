@@ -25,10 +25,15 @@ export function toStringList(value: unknown): string[] {
     .map((entry) => String(entry))
 }
 
+// 문항 앞 번호("1. ", "2) ")만 걷어낸다. 번호 표기가 문항마다 달라 정규식으로 느슨하게 본다.
+export function stripPromptNumber(prompt: string): string {
+  return (prompt ?? '').replace(/^\s*\d+\s*[.)]\s*/, '')
+}
+
 // "1. 그것은 ____예요." -> { prefix: '그것은', suffix: '예요.' }
-// 번호와 빈칸 표기(밑줄 개수)가 문항마다 달라서 정규식으로 느슨하게 걷어낸다.
+// 빈칸 표기(밑줄 개수)도 문항마다 달라서 정규식으로 느슨하게 걷어낸다.
 export function splitPracticePrompt(prompt: string): { prefix: string; suffix: string } {
-  const withoutNumber = (prompt ?? '').replace(/^\s*\d+\s*[.)]\s*/, '')
+  const withoutNumber = stripPromptNumber(prompt)
   const blank = withoutNumber.match(/_{2,}/)
   if (!blank || blank.index === undefined) {
     return { prefix: withoutNumber.trim(), suffix: '' }
@@ -103,13 +108,22 @@ export function toMaterialPracticeItems(
   return items
 }
 
+// 자유 작문(FREE) 문항인지. 빈칸이 아니라 문장 전체를 직접 쓰는 문항이라
+// 정답이 하나로 정해지지 않고 answer 는 예시 문장(sample)으로만 온다.
+export function isFreeQuestion(question: SectionQuestion): boolean {
+  return matchesQuestionType(question, ['FREE'])
+}
+
 // 문항 API 문항이 어떤 단계에 속하는지 정한다.
-// 서버 type 문자열이 섹션마다 달라서 키워드로 느슨하게 보고, 보기가 있으면 무조건 보기 선택 단계다.
+// 서버 type 문자열이 섹션마다 달라서 키워드로 느슨하게 본다.
 export function toQuestionStage(question: SectionQuestion): PracticeStageId {
+  // FREE 는 자유 작문 단계로 고정한다. 보기가 딸려 와도(예시 단어 목록) 객관식으로 보지 않는다.
+  if (isFreeQuestion(question)) return 'make'
   if ((question.options?.length ?? 0) > 0) return 'choice'
   if (matchesQuestionType(question, ['MCQ', 'CHOICE'])) return 'choice'
-  if (matchesQuestionType(question, ['SENTENCE', 'MAKE', 'WRITE', 'COMPOSE', 'FREE'])) return 'make'
-  // BLANK/FILL/SHORT/WORD 를 포함해 타입을 알 수 없는 주관식은 모두 빈칸 단계로 본다.
+  if (matchesQuestionType(question, ['SENTENCE', 'MAKE', 'WRITE', 'COMPOSE'])) return 'make'
+  // BLANK/FILL/SHORT/WORD 를 포함해 타입을 알 수 없는 주관식은 빈칸 단계로 본다.
+  // FREE 는 위에서 이미 걸러지므로 이 폴백으로 내려오지 않는다.
   return 'fill'
 }
 
@@ -121,7 +135,11 @@ export function toQuestionPracticeItems(
     .filter((question) => toQuestionStage(question) === stage)
     .map((question) => {
       const questionText = toTrimmedText(question.questionText)
-      const { prefix, suffix } = splitPracticePrompt(questionText)
+      const isFree = isFreeQuestion(question)
+      // FREE 는 문장 전체를 쓰는 문항이라 빈칸으로 쪼개지 않고 제시문을 그대로 보여 준다.
+      const { prefix, suffix } = isFree
+        ? { prefix: stripPromptNumber(questionText).trim(), suffix: '' }
+        : splitPracticePrompt(questionText)
       const answer = toTrimmedText(question.answer)
 
       return {
@@ -133,9 +151,11 @@ export function toQuestionPracticeItems(
         hasImagePlaceholder: false,
         prefix,
         suffix,
-        options: question.options ?? [],
+        // FREE 는 보기 선택 문항이 아니라서 보기가 딸려 와도 그리지 않는다.
+        options: isFree ? [] : question.options ?? [],
         answers: answer.length > 0 ? [answer] : [],
-        isSampleAnswer: false,
+        // FREE 의 answer 는 유일한 정답이 아니라 예시 문장이므로 채점 기준으로 쓰지 않는다.
+        isSampleAnswer: isFree,
         cardBack: '',
       }
     })
@@ -220,7 +240,14 @@ export function normalizeAnswerText(value: string): string {
   return value.replace(/\s+/g, ' ').trim()
 }
 
+// 예시 답안(sample)만 있는 문항. 정답이 하나로 정해지지 않아 Exact match 로 채점하면 안 된다.
+export function isSampleAnswerItem(item: PracticeItemModel): boolean {
+  return item.isSampleAnswer
+}
+
 export function matchesPracticeAnswer(item: PracticeItemModel, answer: string): boolean {
+  // sample 은 정답 목록이 아니라 예시 문장이라 일치 여부를 따지지 않는다.
+  if (isSampleAnswerItem(item)) return false
   const normalized = normalizeAnswerText(answer)
   return item.answers.some((candidate) => normalizeAnswerText(candidate) === normalized)
 }
@@ -309,14 +336,18 @@ export function toSentenceTokens(questionText: string | undefined): string[] {
 }
 
 export function toPracticeQuestions(questions: SectionQuestion[]): PracticeQuestionModel[] {
-  return questions.map((question, index) => ({
-    questionId: question.id,
-    title: `Question ${index + 1}`,
-    prompt: question.questionText,
-    type: (question.options?.length ?? 0) > 0 ? 'choice' : 'blank',
-    options: question.options ?? [],
-    answer: question.answer,
-  }))
+  return questions.map((question, index) => {
+    // FREE 를 먼저 본다. 보기가 없다고 해서 전부 빈칸(blank)으로 보면 자유 작문이 빈칸으로 오인된다.
+    const isFree = isFreeQuestion(question)
+    return {
+      questionId: question.id,
+      title: `Question ${index + 1}`,
+      prompt: question.questionText,
+      type: isFree ? 'free' : (question.options?.length ?? 0) > 0 ? 'choice' : 'blank',
+      options: isFree ? [] : question.options ?? [],
+      answer: question.answer,
+    }
+  })
 }
 
 export const grammarPageByStep: Partial<Record<PracticeStep, number>> = {

@@ -57,11 +57,13 @@ export interface NextGrammarExampleMessage {
     annotated?: AnnotatedLineSource
 }
 
+// type: choice = 보기 선택, blank = 빈칸 채우기, free = 자유 작문(FREE 문항).
+// free 는 정답이 하나로 정해지지 않아 answer 를 예시 문장(sample)으로만 쓰고 정/오답을 매기지 않는다.
 export interface PracticeQuestionModel {
     questionId: number
     title: string
     prompt: string
-    type: 'choice' | 'blank'
+    type: 'choice' | 'blank' | 'free'
     options: string[]
     answer: string | null
 }
