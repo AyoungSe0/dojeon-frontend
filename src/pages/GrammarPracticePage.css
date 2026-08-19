@@ -1042,14 +1042,34 @@
   padding: 24px 18px;
 }
 
+/* 빈칸 채우기는 문장과 입력칸을 하나의 인라인 흐름으로 묶어, 문장이 길어져도 입력칸이 글줄 안에서 같이 흐르게 한다. */
+.grammar-practice-content-fill .grammar-practice-question-stack {
+  display: block;
+  width: 100%;
+}
+
 .grammar-practice-content-fill .grammar-practice-question-row {
-  gap: 8px;
+  display: block;
+  gap: 0;
+  text-align: center;
+  font-size: 12px;
+  line-height: 34px;
 }
 
 .grammar-practice-content-fill .grammar-practice-question-text,
 .grammar-practice-content-fill .grammar-practice-question-dot {
+  display: inline;
   font-size: 12px;
   font-weight: 600;
+  line-height: inherit;
+}
+
+/* inline-flex 로 두어야 입력칸이 줄 상자 기준선에 밀려 글줄보다 아래로 내려가지 않는다. */
+.grammar-practice-content-fill .grammar-practice-answer-column {
+  display: inline-flex;
+  align-items: center;
+  vertical-align: middle;
+  margin: 0 6px;
 }
 
 .grammar-practice-content-fill .grammar-practice-answer-column,
