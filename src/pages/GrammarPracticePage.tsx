@@ -72,7 +72,10 @@ interface GrammarPracticePageProps {
    * 섹션을 완료 저장한 뒤, 진행도 API 가 알려준 다음 섹션으로 이동한다.
    * nextSection 이 null 이면 코스의 마지막 섹션이라 수업 밖으로 나간다.
    */
-  onOpenNextSection: (nextSection: NextSection | null) => void
+  onOpenNextSection: (
+    nextSection: NextSection | null,
+    options?: { openNextLessonWhenMissing?: boolean },
+  ) => void
   /**
    * annotation 팝업의 GO TO LESSON 으로 열린 화면인지 여부.
    * target.mode 가 EXPLANATION_ONLY 면 하단 BACK/NEXT 를 비활성화한다.
@@ -1352,12 +1355,12 @@ function GrammarPracticePage({
     if (!isListeningComplete || saveProgress.isPending) return
 
     if (sectionId === null || sectionId < 0) {
-      onBack()
+      onOpenNextSection(null, { openNextLessonWhenMissing: true })
       return
     }
 
     try {
-      await saveProgress.mutateAsync({
+      const result = await saveProgress.mutateAsync({
         sectionId,
         payload: {
           currentPage: Math.max(1, listeningQuestions.length),
@@ -1365,9 +1368,38 @@ function GrammarPracticePage({
           isCompleted: true,
         },
       })
-      onBack()
+      onOpenNextSection(result?.nextSection ?? null, { openNextLessonWhenMissing: true })
     } catch {
       // 저장 실패 시 현재 화면을 유지해 사용자가 다시 시도할 수 있게 한다.
+    }
+  }
+
+  const handleReadingComplete = async () => {
+    if (!isReadingComplete || saveProgress.isPending || explanationOnly) return
+
+    // 개발용
+    if (sectionId === null || sectionId < 0) {
+      pushHistory()
+      setListeningQuestionIndex(0)
+      setListeningAnswers({})
+      listeningAnswersRef.current = {}
+      setListeningGradedAnswers({})
+      setPracticeStep('listening')
+      return
+    }
+
+    try {
+      const result = await saveProgress.mutateAsync({
+        sectionId,
+        payload: {
+          currentPage: Math.max(1, readingQuestions.length),
+          stayTimeSeconds: 0,
+          isCompleted: true,
+        },
+      })
+      onOpenNextSection(result?.nextSection ?? null)
+    } catch {
+      // 저장 실패 시 READING 화면을 유지해 다시 시도할 수 있게 한다.
     }
   }
 
@@ -2482,20 +2514,15 @@ function GrammarPracticePage({
             </div>
             <button
               type="button"
-              className={`grammar-practice-reading-next-button ${isReadingComplete && !explanationOnly ? 'grammar-practice-reading-next-button-active' : ''}`}
-              disabled={!isReadingComplete || explanationOnly}
-              onClick={() => {
-                if (!isReadingComplete || explanationOnly) return
-                pushHistory()
-                setListeningQuestionIndex(0)
-                setListeningAnswers({})
-                listeningAnswersRef.current = {}
-                setListeningGradedAnswers({})
-                setPracticeStep('listening')
-              }}
+              className={`grammar-practice-reading-next-button ${isReadingComplete && !saveProgress.isPending && !explanationOnly ? 'grammar-practice-reading-next-button-active' : ''}`}
+              disabled={!isReadingComplete || saveProgress.isPending || explanationOnly}
+              onClick={() => void handleReadingComplete()}
             >
-              Next
+              {saveProgress.isPending ? 'SAVING...' : 'Next'}
             </button>
+            {saveProgress.error ? (
+              <p className="grammar-practice-review-error">{saveProgress.error.message}</p>
+            ) : null}
           </section>
         ) : !isReviewStep && isMakeStep ? (
           <>
