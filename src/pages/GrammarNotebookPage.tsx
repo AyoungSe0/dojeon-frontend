@@ -281,20 +281,26 @@ function GrammarDetail({
           <p className="grammar-notebook-detail-label">Examples</p>
           <div className="grammar-notebook-dialogue-list">
             {dialogues.flatMap((dialogue, dialogueIndex) =>
-              dialogue.lines.map((line, lineIndex) => (
-                <div
-                  key={`${dialogueIndex}-${lineIndex}-${line.ko}`}
-                  className="grammar-notebook-dialogue-line"
-                >
-                  <span className="grammar-notebook-dialogue-speaker">{line.speaker}</span>
-                  <div>
-                    <p className="grammar-notebook-dialogue-ko">{line.ko}</p>
-                    <p className="grammar-notebook-dialogue-translation" dir={translationDir}>
-                      {pickDialogueTranslation(line, contentLanguage)}
-                    </p>
+              dialogue.lines.map((line, lineIndex) => {
+                // mother language 번역이 없으면 다른 언어로 폴백하지 않고 원문만 보여 준다.
+                const translation = pickDialogueTranslation(line, contentLanguage)
+                return (
+                  <div
+                    key={`${dialogueIndex}-${lineIndex}-${line.ko}`}
+                    className="grammar-notebook-dialogue-line"
+                  >
+                    <span className="grammar-notebook-dialogue-speaker">{line.speaker}</span>
+                    <div>
+                      <p className="grammar-notebook-dialogue-ko">{line.ko}</p>
+                      {translation.length > 0 ? (
+                        <p className="grammar-notebook-dialogue-translation" dir={translationDir}>
+                          {translation}
+                        </p>
+                      ) : null}
+                    </div>
                   </div>
-                </div>
-              )),
+                )
+              }),
             )}
           </div>
         </article>

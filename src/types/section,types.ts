@@ -17,15 +17,20 @@ export interface Dialogue {
 }
 
 // contentText.practices: 문제 풀이용 연습 블록.
-// kind 로 문항 형태가 갈리고(choose=보기 선택, fill=빈칸 입력, free=자유 작문),
-// 한 블록은 같은 fixedQuestion("이것은 뭐예요?") 아래 여러 items 를 묶어서 내려온다.
-export type MaterialPracticeKind = 'choose' | 'fill' | 'free';
+// kind 로 문항 형태가 갈리고(choose=보기 선택, fill=빈칸 입력, free=자유 작문,
+// cards=카드 뒤집기), 한 블록은 같은 fixedQuestion("이것은 뭐예요?") 아래 여러
+// items 를 묶어서 내려온다.
+export type MaterialPracticeKind = 'choose' | 'fill' | 'free' | 'cards';
 
 export interface MaterialPracticeItem {
-    prompt: string;
+    prompt?: string;
     answers?: string[];
     options?: string[];
     sample?: string;
+    // cards 연습은 앞/뒷면 형태로 내려올 수 있어 둘 다 받는다.
+    front?: string;
+    back?: string;
+    note?: string;
 }
 
 export interface MaterialPractice {
