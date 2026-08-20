@@ -35,6 +35,7 @@ import { isUnauthorizedError } from './services/apiError'
 import { useChangeUserPassword } from './hooks/useChangeUserPassword.ts'
 import { useUpdateUserMe } from './hooks/useUpdateUserMe.ts'
 import { useUserMe } from './hooks/useUserMe.ts'
+import { fetchLessonSections } from './services/learning.service.ts'
 import {
   buildAuthSession,
   clearStoredAuthSession,
@@ -638,6 +639,52 @@ function App() {
   }
 
   /**
+   * Lesson의 마지막 섹션 완료 응답에 nextSection이 없을 때,
+   * 같은 Course의 다음 Lesson 첫 섹션을 연다.
+   */
+  const openFirstSectionOfNextLesson = async () => {
+    if (selectedLessonNumericId === null || grammarPracticeBackScreen !== 'lesson-detail') {
+      return false
+    }
+
+    try {
+      const currentLesson = await queryClient.fetchQuery({
+        queryKey: ['learning', 'lessons', selectedLessonNumericId, 'sections'],
+        queryFn: ({ signal }) => fetchLessonSections(selectedLessonNumericId, signal),
+      })
+      if (!currentLesson) return false
+
+      const orderedLessons = [...currentLesson.siblingLessons].sort(
+        (a, b) => a.orderNum - b.orderNum,
+      )
+      const currentLessonIndex = orderedLessons.findIndex(
+        (lesson) => lesson.lessonId === selectedLessonNumericId,
+      )
+      if (currentLessonIndex < 0) return false
+
+      const nextLesson = orderedLessons[currentLessonIndex + 1]
+      if (!nextLesson) return false
+
+      const nextLessonData = await queryClient.fetchQuery({
+        queryKey: ['learning', 'lessons', nextLesson.lessonId, 'sections'],
+        queryFn: ({ signal }) => fetchLessonSections(nextLesson.lessonId, signal),
+      })
+      const firstSection = [...(nextLessonData?.sections ?? [])]
+        .sort((a, b) => a.orderNum - b.orderNum)
+        .find((section) => {
+          const type = section.type.toUpperCase()
+          return type === 'VOCAB' || type === 'VOCABULARY'
+        })
+      if (!firstSection) return false
+
+      setSelectedLessonNumericId(nextLesson.lessonId)
+      return handleOpenSection(firstSection.sectionId, firstSection.type, 'lesson-detail')
+    } catch {
+      return false
+    }
+  }
+
+  /**
    * annotation 팝업의 GO TO LESSON: concept.target 섹션을 열고 복귀 정보를 기억한다.
    * sectionType 에 맞는 화면으로만 이동한다. 알 수 없는 타입이면 GRAMMAR 로
    * 폴백하지 않고 false 를 돌려주고, 팝업이 대신 안내 문구를 띄운다.
@@ -876,7 +923,8 @@ function App() {
       ) : visibleScreen === 'customize-practice' ? (
         <CustomizePracticePage
           onExit={() => {
-            setScreen('class')
+            setVocabularyLessonInitialView('card')
+            setScreen('vocabulary-lesson')
           }}
           onNext={(questionCount, languageDirection) => {
             setWordPracticeSettings({
@@ -897,7 +945,7 @@ function App() {
             setScreen('customize-practice')
           }}
           onExit={() => {
-            setScreen('class')
+            setScreen('customize-practice')
           }}
           onComplete={() => {
             setVocabularyLessonInitialView('card')
@@ -1083,7 +1131,7 @@ function App() {
               handleAnnotationJumpReturn()
               return
             }
-            setScreen('class')
+            setScreen(vocabularyLessonBackScreen)
           }}
           onOpenFlashcardPractice={() => {
             setVocabularyLessonInitialView('card')
@@ -1179,18 +1227,33 @@ function App() {
               handleAnnotationJumpReturn()
               return
             }
-            setScreen('class')
+            setScreen(grammarPracticeBackScreen)
           }}
-          onOpenNextSection={(nextSection) => {
+          onOpenNextSection={(nextSection, options) => {
             setAnnotationJump(null)
-            // 마지막 섹션이거나 아직 지원하지 않는 타입이면 수업 목록으로 돌아간다.
-            if (
-              !nextSection ||
-              !handleOpenSection(nextSection.sectionId, nextSection.type, grammarPracticeBackScreen)
-            ) {
+            void (async () => {
+              if (nextSection) {
+                // 다음 섹션이 다음 Lesson에 속하면 상단 뒤로가기도 그 Lesson Detail로 복귀한다.
+                setSelectedLessonNumericId(nextSection.lessonId)
+                if (
+                  handleOpenSection(
+                    nextSection.sectionId,
+                    nextSection.type,
+                    grammarPracticeBackScreen,
+                  )
+                ) {
+                  return
+                }
+              } else if (
+                options?.openNextLessonWhenMissing === true &&
+                await openFirstSectionOfNextLesson()
+              ) {
+                return
+              }
+
               setSelectedSectionId(null)
               setScreen(grammarPracticeBackScreen)
-            }
+            })()
           }}
         />
       ) : (
