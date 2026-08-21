@@ -301,7 +301,7 @@
 }
 
 .lesson-detail-module-card-selected {
-  background: var(--dojeon-color-primary-container);
+  background: var(--dojeon-color-primary-200);
 }
 
 .lesson-detail-module-card-completed {
