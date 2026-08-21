@@ -469,6 +469,32 @@ function GrammarPracticePage({
   const showPracticeEmptyState = isPracticeStep && activePractice === null
   // 진행 표시줄 / 안내 문구 / Next 버튼은 실제 문항을 그릴 때만 띄운다.
   const showPracticeChrome = isPracticeStep && !showPracticeEmptyState
+  const fillPromptParts = useMemo(() => {
+    if (!isFillStep || activePractice === null) return null
+
+    const lines = activePractice.prefix
+      .split(/\r?\n/)
+      .map((line) => line.trim())
+      .filter(Boolean)
+    if (lines.length === 0) return null
+
+    if (lines.length === 1) {
+      const singleLineMatch = lines[0].match(/^(질문:\s*.+?\([^)]*\))\s+(.+)$/)
+      if (!singleLineMatch) return null
+
+      return {
+        promptLine: singleLineMatch[1],
+        beforeBlank: singleLineMatch[2],
+        afterBlank: activePractice.suffix,
+      }
+    }
+
+    return {
+      promptLine: lines.slice(0, -1).join(' '),
+      beforeBlank: lines[lines.length - 1],
+      afterBlank: activePractice.suffix,
+    }
+  }, [activePractice, isFillStep])
 
   const choiceOptions = activePractice?.options ?? []
   // 자유 작문 연습이 고정 질문("이것은 뭐예요?")을 들고 있으면 제시어 줄 대신 그 질문만 보여 준다.
@@ -1192,6 +1218,32 @@ function GrammarPracticePage({
     // 방금 끝낸 섹션 자료를 다시 불러와 같은 화면이 반복된다.
     onOpenNextSection(nextSection)
   }
+
+  const answerColumn = (
+    <div className="grammar-practice-answer-column">
+      {isFillStep ? (
+        <input
+          type="text"
+          className="grammar-practice-answer-input"
+          value={typedAnswer}
+          enterKeyHint="done"
+          onChange={(e) => setTypedAnswer(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter') {
+              e.preventDefault()
+              pushHistory()
+              void handleTextAnswerSubmit('fill', typedAnswer)
+            }
+          }}
+        />
+      ) : (
+        <div className="grammar-practice-answer-slot">{isAnswered ? selectedAnswer : null}</div>
+      )}
+      {isFillStep && isWrongAnswer ? (
+        <p className="grammar-practice-correct-answer grammar-practice-correct-answer-fill">{correctAnswer}</p>
+      ) : null}
+    </div>
+  )
 
   if (isFillIntroStep) {
     return (
@@ -2421,40 +2473,28 @@ function GrammarPracticePage({
               }`}
             >
               <div className="grammar-practice-question-stack">
-                <div className="grammar-practice-question-row">
-                  <p className="grammar-practice-question-text">{activePractice?.prefix ?? ''}</p>
-                  <div className="grammar-practice-answer-column">
-                    {isFillStep ? (
-                      <input
-                        type="text"
-                        className="grammar-practice-answer-input"
-                        value={typedAnswer}
-                        enterKeyHint="done"
-                        onChange={(e) => setTypedAnswer(e.target.value)}
-                        onKeyDown={(e) => {
-                          if (e.key === 'Enter') {
-                            e.preventDefault()
-                            pushHistory()
-                            void handleTextAnswerSubmit('fill', typedAnswer)
-                          }
-                        }}
-                      />
-                    ) : (
-                      <div className="grammar-practice-answer-slot">{isAnswered ? selectedAnswer : null}</div>
-                    )}
-                    {isFillStep && isWrongAnswer ? (
-                      <p className="grammar-practice-correct-answer grammar-practice-correct-answer-fill">
-                        {correctAnswer}
-                      </p>
+                {isFillStep && fillPromptParts ? (
+                  <div className="grammar-practice-fill-prompt-lines">
+                    <p className="grammar-practice-question-text grammar-practice-fill-prompt-line">
+                      {fillPromptParts.promptLine}
+                    </p>
+                    <div className="grammar-practice-question-row grammar-practice-fill-sentence-line">
+                      <span className="grammar-practice-question-text">{fillPromptParts.beforeBlank}</span>
+                      {answerColumn}
+                      <span className="grammar-practice-question-text">{fillPromptParts.afterBlank}</span>
+                    </div>
+                  </div>
+                ) : (
+                  <div className="grammar-practice-question-row">
+                    <p className="grammar-practice-question-text">{activePractice?.prefix ?? ''}</p>
+                    {answerColumn}
+                    {activePractice !== null && activePractice.suffix ? (
+                      <p className="grammar-practice-question-text">{activePractice.suffix}</p>
+                    ) : activePractice !== null && activePractice.questionId !== null ? (
+                      <span className="grammar-practice-question-dot">.</span>
                     ) : null}
                   </div>
-                  {/* 연습 문항은 빈칸 뒤 어미("예요.")까지 prompt 에 들어 있어 마침표를 따로 찍지 않는다. */}
-                  {activePractice !== null && activePractice.suffix ? (
-                    <p className="grammar-practice-question-text">{activePractice.suffix}</p>
-                  ) : activePractice !== null && activePractice.questionId !== null ? (
-                    <span className="grammar-practice-question-dot">.</span>
-                  ) : null}
-                </div>
+                )}
               </div>
             </section>
 
