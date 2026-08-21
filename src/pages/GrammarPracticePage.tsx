@@ -212,6 +212,7 @@ function GrammarPracticePage({
   explanationOnly = false,
   onOpenAnnotationTarget,
 }: GrammarPracticePageProps) {
+  const contentLanguage = toContentLanguage(language)
   const {
     data: questionsData,
     loading: questionsLoading,
@@ -411,6 +412,29 @@ function GrammarPracticePage({
   const [listeningGradedAnswers, setListeningGradedAnswers] = useState<Record<number, boolean>>({})
   const [visibleExampleTranslations, setVisibleExampleTranslations] = useState<Record<string, boolean>>({})
   const [activeNextGrammarDialog, setActiveNextGrammarDialog] = useState<NextGrammarDialogState | null>(null)
+  const activeAnnotation =
+    activeNextGrammarDialog?.kind === 'annotation'
+      ? activeNextGrammarDialog.annotations[activeNextGrammarDialog.index] ?? null
+      : null
+  const activeAnnotationTarget = resolveAnnotationTarget(activeAnnotation)
+  const annotationGrammarSectionId =
+    activeAnnotation?.type === 'GRAMMAR' ? activeAnnotationTarget?.sectionId ?? null : null
+  const { data: annotationGrammarMaterialsData, loading: annotationGrammarMaterialsLoading } =
+    useSectionMaterials(annotationGrammarSectionId)
+  const annotationTargetExplanation = useMemo(() => {
+    const materials = annotationGrammarMaterialsData?.materials ?? []
+    if (materials.length === 0) return null
+
+    const targetMaterial =
+      materials.find((material) => material.id === activeAnnotationTarget?.materialId) ??
+      materials.find((material) => (material.type ?? '').toUpperCase().includes('GRAMMAR')) ??
+      materials.find((material) => (material.contentText?.explanations?.length ?? 0) > 0) ??
+      null
+
+    return targetMaterial
+      ? pickContentExplanation(targetMaterial.contentText, contentLanguage)
+      : null
+  }, [activeAnnotationTarget?.materialId, annotationGrammarMaterialsData, contentLanguage])
   const [readingDragOffset, setReadingDragOffset] = useState(0)
   const [isReadingDragging, setIsReadingDragging] = useState(false)
   const [listeningDragOffset, setListeningDragOffset] = useState(0)
@@ -595,7 +619,6 @@ function GrammarPracticePage({
     listeningQuestionIndexForDisplay * listeningTrackStride +
     listeningDragOffset
   const progressDotPositions = [3, 21.8, 40.6, 59.4, 78.2, 97]
-  const contentLanguage = toContentLanguage(language)
   const isTranslationRtl = isRtlContentLanguage(contentLanguage)
   // 서버 설명이 있으면 mother language 에 맞는 것을 쓴다.
   // 없으면 개발 서버에서만 시안 문구로 폴백하고, 운영에서는 설명 영역을 비워 둔다.
@@ -2641,6 +2664,16 @@ function GrammarPracticePage({
                       annotation.concept?.explanation,
                       contentLanguage,
                     )
+                    const annotationDescription =
+                      annotation.type === 'GRAMMAR'
+                        ? annotationTargetExplanation?.text ||
+                          explanationText ||
+                          (annotationGrammarMaterialsLoading ? 'Loading explanation...' : '')
+                        : explanationText || annotation.surface
+                    const annotationDescriptionDir =
+                      annotation.type === 'GRAMMAR' && annotationTargetExplanation
+                        ? contentTextDirection(toContentLanguage(annotationTargetExplanation.lang))
+                        : contentTextDirection(contentLanguage)
                     // annotation 타입과 맞는 목적지가 아니면 GO TO LESSON 자체를 숨긴다.
                     const target = resolveAnnotationTarget(annotation)
                     const canGoToLesson =
@@ -2694,10 +2727,11 @@ function GrammarPracticePage({
                           className={`grammar-practice-next-grammar-note-description ${
                             annotation.type === 'VOCAB'
                               ? 'grammar-practice-next-grammar-note-description-vocab'
-                              : ''
+                              : 'grammar-practice-next-grammar-note-description-grammar'
                           }`}
+                          dir={annotationDescriptionDir}
                         >
-                          {explanationText || annotation.surface}
+                          {annotationDescription}
                         </p>
                         {blockedMessage ? (
                           <p className="grammar-practice-annotation-note-empty" role="status">
