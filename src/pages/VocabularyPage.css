@@ -343,6 +343,78 @@
   cursor: default;
 }
 
+.vocabulary-remove-modal-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 20;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+  box-sizing: border-box;
+  background: var(--dojeon-color-dim);
+}
+
+.vocabulary-remove-modal {
+  width: min(288px, 100%);
+  border-radius: 10px;
+  background: var(--dojeon-color-surface);
+  padding: 24px 18px 18px;
+  box-sizing: border-box;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+}
+
+.vocabulary-remove-modal-copy,
+.vocabulary-remove-modal-error {
+  margin: 0;
+  color: var(--dojeon-color-gray-900);
+  font-size: 16px;
+  font-weight: 500;
+  line-height: 1.4;
+  text-align: center;
+}
+
+.vocabulary-remove-modal-error {
+  margin-top: 10px;
+  color: var(--dojeon-color-error);
+  font-size: 13px;
+}
+
+.vocabulary-remove-modal-actions {
+  width: 100%;
+  margin-top: 26px;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.vocabulary-remove-modal-button {
+  height: 44px;
+  border: 0;
+  border-radius: 8px;
+  font-size: 16px;
+  font-weight: 500;
+  line-height: 1.2;
+  cursor: pointer;
+}
+
+.vocabulary-remove-modal-button:disabled {
+  opacity: 0.72;
+  cursor: default;
+}
+
+.vocabulary-remove-modal-button-secondary {
+  background: var(--dojeon-color-gray-100);
+  color: var(--dojeon-color-gray-900);
+}
+
+.vocabulary-remove-modal-button-primary {
+  background: var(--dojeon-color-primary-action);
+  color: var(--dojeon-color-surface);
+}
+
 .vocabulary-detail {
   margin-top: 24px;
   display: flex;
