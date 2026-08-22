@@ -3,6 +3,7 @@ import './VocabularyPage.css'
 import { useVocabScraps } from '../hooks/useVocabScraps.ts'
 import { useDeleteScrap } from '../hooks/useDeleteScrap.ts'
 import type { VocabScrapGroup, VocabScrapItem } from '../types/scraps.types.ts'
+import type { WordPracticeCard } from './WordPracticePage.tsx'
 import {
   contentTextDirection,
   pickLocaleText,
@@ -12,7 +13,12 @@ import {
 
 interface VocabularyPageProps {
   language: string
+  initialCourseId?: number | null
+  initialIsRecentSort?: boolean
   onBack: () => void
+  onSelectedCourseChange: (courseId: number | null) => void
+  onSortChange: (isRecentSort: boolean) => void
+  onOpenFlashcardPractice: (courseId: number, cards: WordPracticeCard[]) => void
 }
 
 // 대시보드 preview(백엔드에서 5개로 잘라 보냄)와 개수를 맞춰 notebook → see more 이동 시 목록이 줄어 보이지 않게 한다.
@@ -182,11 +188,19 @@ const previewVocabGroups: VocabScrapGroup[] = [
   },
 ]
 
-function VocabularyPage({ language, onBack }: VocabularyPageProps) {
+function VocabularyPage({
+  language,
+  initialCourseId = null,
+  initialIsRecentSort = true,
+  onBack,
+  onSelectedCourseChange,
+  onSortChange,
+  onOpenFlashcardPractice,
+}: VocabularyPageProps) {
   const contentLanguage = toContentLanguage(language)
   const translationDir = contentTextDirection(contentLanguage)
-  const [isRecentSort, setIsRecentSort] = useState(true)
-  const [selectedCourseId, setSelectedCourseId] = useState<number | null>(null)
+  const [isRecentSort, setIsRecentSort] = useState(initialIsRecentSort)
+  const [selectedCourseId, setSelectedCourseId] = useState<number | null>(initialCourseId)
   const [expandedScrapId, setExpandedScrapId] = useState<string | null>(null)
   const [selectedWord, setSelectedWord] = useState<VocabScrapItem | null>(null)
   const [pendingRemoval, setPendingRemoval] = useState<VocabScrapItem | null>(null)
@@ -206,20 +220,14 @@ function VocabularyPage({ language, onBack }: VocabularyPageProps) {
   // 그룹 객체를 저장하지 않고 courseId로 다시 찾는다. 뒤이어 도착한 페이지의 단어까지 반영되도록.
   const selectedGroup =
     sortedVisibleGroups.find((group) => group.courseId === selectedCourseId) ?? null
-  const selectedFlashcardItems = selectedGroup?.items ?? []
-  const selectedWordFlashcardIndex = selectedWord
-    ? selectedFlashcardItems.findIndex((item) => item.scrapId === selectedWord.scrapId)
-    : -1
   const selectedWordGroupIndex =
     selectedWord && selectedGroup
       ? selectedGroup.items.findIndex((item) => item.scrapId === selectedWord.scrapId)
       : -1
   const selectedWordDisplayIndex =
-    selectedWordFlashcardIndex >= 0
-      ? selectedWordFlashcardIndex + 1
-      : selectedWordGroupIndex >= 0
-        ? selectedWordGroupIndex + 1
-        : (selectedWord?.card?.sequence ?? 1)
+    selectedWordGroupIndex >= 0
+      ? selectedWordGroupIndex + 1
+      : (selectedWord?.card?.sequence ?? 1)
 
   const openRemovalPrompt = (item: VocabScrapItem) => {
     deleteScrapMutation.reset()
@@ -254,6 +262,7 @@ function VocabularyPage({ language, onBack }: VocabularyPageProps) {
 
     if (selectedGroup) {
       setSelectedCourseId(null)
+      onSelectedCourseChange(null)
       setExpandedScrapId(null)
       return
     }
@@ -298,7 +307,11 @@ function VocabularyPage({ language, onBack }: VocabularyPageProps) {
             <button
               type="button"
               className="vocabulary-sort-button"
-              onClick={() => setIsRecentSort((prev) => !prev)}
+              onClick={() => {
+                const nextSort = !isRecentSort
+                setIsRecentSort(nextSort)
+                onSortChange(nextSort)
+              }}
               aria-label={isRecentSort ? 'Sort oldest added first' : 'Sort newest added first'}
             >
               <span>{isRecentSort ? 'Recently added' : 'Oldest added'}</span>
@@ -342,8 +355,15 @@ function VocabularyPage({ language, onBack }: VocabularyPageProps) {
             onRemove={openRemovalPrompt}
             onOpenDetail={setSelectedWord}
             onOpenFlashcardPractice={() => {
-              const [firstSelectedItem] = selectedFlashcardItems
-              if (firstSelectedItem) setSelectedWord(firstSelectedItem)
+              const cards = selectedGroup.items.flatMap((item) => {
+                if (!item.card) return []
+                return [{
+                  id: item.card.id,
+                  wordFront: item.card.wordFront,
+                  wordBack: getTranslation(item, contentLanguage),
+                }]
+              })
+              if (cards.length > 0) onOpenFlashcardPractice(selectedGroup.courseId, cards)
             }}
           />
         ) : loading ? (
@@ -368,7 +388,10 @@ function VocabularyPage({ language, onBack }: VocabularyPageProps) {
           <>
             <CourseList
               groups={sortedVisibleGroups}
-              onOpenGroup={(group) => setSelectedCourseId(group.courseId)}
+              onOpenGroup={(group) => {
+                setSelectedCourseId(group.courseId)
+                onSelectedCourseChange(group.courseId)
+              }}
             />
             {loadingMore ? <p className="vocabulary-loading">Loading more...</p> : null}
           </>

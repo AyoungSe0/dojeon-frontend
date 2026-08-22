@@ -2,17 +2,18 @@ import { useState, type KeyboardEvent } from 'react'
 import './CustomizePracticePage.css'
 
 interface CustomizePracticePageProps {
+  sourceLanguageLabel?: string
   onExit: () => void
   onNext: (questionCount: number, languageDirection: LanguageDirection) => void
 }
 
 const questionCounts = [5, 10, 15, 20] as const
 
-export type LanguageDirection = 'english-to-korean' | 'korean-to-english'
+export type LanguageDirection = 'mother-language-to-korean' | 'korean-to-mother-language'
 
 const languageDirections = [
-  { value: 'english-to-korean', from: 'English', to: 'Korean' },
-  { value: 'korean-to-english', from: 'Korean', to: 'English' },
+  { value: 'mother-language-to-korean', from: 'Mother language', to: 'Korean' },
+  { value: 'korean-to-mother-language', from: 'Korean', to: 'Mother language' },
 ] as const satisfies ReadonlyArray<{
   value: LanguageDirection
   from: string
@@ -58,6 +59,7 @@ const moveRadioSelection = <T,>(
 }
 
 function CustomizePracticePage({
+  sourceLanguageLabel = 'English',
   onExit,
   onNext,
 }: CustomizePracticePageProps) {
@@ -152,6 +154,8 @@ function CustomizePracticePage({
             >
               {languageDirections.map(({ value, from, to }, index) => {
                 const isSelected = selectedLanguageDirection === value
+                const displayFrom = from === 'Mother language' ? sourceLanguageLabel : from
+                const displayTo = to === 'Mother language' ? sourceLanguageLabel : to
 
                 return (
                   <button
@@ -175,7 +179,7 @@ function CustomizePracticePage({
                       )
                     }
                   >
-                    <span>{from}</span>
+                    <span>{displayFrom}</span>
                     <svg
                       className="customize-practice-direction-icon"
                       width="22"
@@ -186,7 +190,7 @@ function CustomizePracticePage({
                     >
                       <path d="M7 0H15V14H22L11 27L0 14H7V0Z" fill="currentColor" />
                     </svg>
-                    <span>{to}</span>
+                    <span>{displayTo}</span>
                   </button>
                 )
               })}

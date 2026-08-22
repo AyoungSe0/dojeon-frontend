@@ -4,10 +4,13 @@ import choiceWrongImage from '../assets/11.png'
 import { useSectionCards } from '../hooks/useSectionCards.ts'
 import type { SectionCard } from '../types/section,types.ts'
 import type { LanguageDirection } from './CustomizePracticePage.tsx'
+import { pickLocaleText, toContentLanguage } from '../data/contentLanguage.ts'
 import './WordPracticePage.css'
 
 interface WordPracticePageProps {
   sectionId: number | null
+  language: string
+  practiceCards?: WordPracticeCard[] | null
   questionCount: number
   languageDirection: LanguageDirection
   sessionSeed: string
@@ -15,6 +18,8 @@ interface WordPracticePageProps {
   onExit: () => void
   onComplete: () => void
 }
+
+export type WordPracticeCard = Pick<SectionCard, 'id' | 'wordFront' | 'wordBack'>
 
 interface WordQuestion {
   id: string
@@ -24,7 +29,7 @@ interface WordQuestion {
 }
 
 interface WordPracticeSessionProps {
-  cards: SectionCard[]
+  cards: WordPracticeCard[]
   questionCount: number
   languageDirection: LanguageDirection
   sessionSeed: string
@@ -55,30 +60,33 @@ const shuffle = <T,>(items: readonly T[], seed: string) => {
 }
 
 const buildQuestions = (
-  cards: SectionCard[],
+  cards: WordPracticeCard[],
   questionCount: number,
   languageDirection: LanguageDirection,
   sessionSeed: string,
 ): WordQuestion[] => {
-  const isEnglishToKorean = languageDirection === 'english-to-korean'
+  const isMotherLanguageToKorean = languageDirection === 'mother-language-to-korean'
   const practiceSeed = `${sessionSeed}:${languageDirection}:${questionCount}:${cards.map((card) => card.id).join(',')}`
-  const selectedCards = shuffle(cards, practiceSeed).slice(
-    0,
-    Math.min(questionCount, cards.length),
-  )
+  const selectedCards = Array.from({ length: questionCount }, (_, index) => {
+    const round = Math.floor(index / cards.length)
+    const cardsInRound = shuffle(cards, `${practiceSeed}:round:${round}`)
+    return cardsInRound[index % cards.length]
+  })
 
   return selectedCards.map((card, index) => {
-    const prompt = isEnglishToKorean ? card.wordBack : card.wordFront
-    const answer = isEnglishToKorean ? card.wordFront : card.wordBack
+    const prompt = isMotherLanguageToKorean ? card.wordBack : card.wordFront
+    const answer = isMotherLanguageToKorean ? card.wordFront : card.wordBack
     const distractors = shuffle(
       cards
         .filter((candidate) => candidate.id !== card.id)
-        .map((candidate) => (isEnglishToKorean ? candidate.wordFront : candidate.wordBack))
+        .map((candidate) =>
+          isMotherLanguageToKorean ? candidate.wordFront : candidate.wordBack,
+        )
         .filter(
           (option, optionIndex, options) =>
             option !== answer && options.indexOf(option) === optionIndex,
         ),
-      `${practiceSeed}:distractors:${card.id}`,
+      `${practiceSeed}:distractors:${card.id}:${index}`,
     ).slice(0, 3)
 
     return {
@@ -265,6 +273,8 @@ function WordPracticeStatusPage({
 
 function WordPracticePage({
   sectionId,
+  language,
+  practiceCards = null,
   questionCount,
   languageDirection,
   sessionSeed,
@@ -273,15 +283,22 @@ function WordPracticePage({
   onComplete,
 }: WordPracticePageProps) {
   const { data, loading, error, refetch } = useSectionCards(sectionId)
-  const cards = (data?.cards ?? []).filter(
+  const isUsingProvidedCards = practiceCards !== null
+  const contentLanguage = toContentLanguage(language)
+  const sectionCards = (data?.cards ?? []).map((card) => ({
+    id: card.id,
+    wordFront: card.wordFront,
+    wordBack: pickLocaleText(card.locales, contentLanguage, 'back') ?? card.wordBack,
+  }))
+  const cards = (practiceCards ?? sectionCards).filter(
     (card) => card.wordFront.trim().length > 0 && card.wordBack.trim().length > 0,
   )
 
-  if (loading && !data) {
+  if (!isUsingProvidedCards && loading && !data) {
     return <WordPracticeStatusPage message="Loading vocabulary..." onExit={onExit} />
   }
 
-  if (error && !data) {
+  if (!isUsingProvidedCards && error && !data) {
     return (
       <WordPracticeStatusPage
         message="Could not load this lesson’s vocabulary."
