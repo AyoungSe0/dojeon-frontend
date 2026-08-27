@@ -657,6 +657,7 @@
 .profile-main-tab-icon {
   width: 24px;
   height: 24px;
+  --themed-icon-color: var(--dojeon-color-gray-600);
   color: var(--dojeon-color-gray-600);
   opacity: 0.38;
 }
@@ -679,6 +680,7 @@
 }
 
 .profile-main-tab-active .profile-main-tab-icon {
+  --themed-icon-color: var(--dojeon-color-gray-800);
   color: var(--dojeon-color-gray-800);
   opacity: 1;
 }

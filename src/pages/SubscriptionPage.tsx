@@ -5,6 +5,7 @@ import groupOutlineIcon from '../assets/group-outline_icon.svg'
 import bookLineIcon from '../assets/mingcute_book-6-line_icon.svg'
 import sparksIcon from '../assets/sparks_icon.svg'
 import closeRoundedIcon from '../assets/close-rounded_icon.svg'
+import ThemedIcon from '../components/ThemedIcon'
 import { useSubscriptionPlans } from '../hooks/useSubscriptionPlans'
 import { isUnauthorizedError } from '../services/apiError'
 import type { SubscriptionPlan } from '../types/subscription.types'
@@ -113,7 +114,7 @@ function SubscriptionPage({
           onClick={onClose}
           aria-label="Close subscription page"
         >
-          <img src={closeRoundedIcon} alt="" aria-hidden="true" />
+          <ThemedIcon src={closeRoundedIcon} />
         </button>
         <h1>What subscription gives you</h1>
       </header>
@@ -131,7 +132,7 @@ function SubscriptionPage({
             <ul className="subscription-page-benefits" aria-label="Subscription benefits">
               {benefits.slice(0, 4).map((benefit, index) => (
                 <li key={`${benefit}-${index}`}>
-                  <img src={benefitIcons[index]} alt="" aria-hidden="true" />
+                  <ThemedIcon src={benefitIcons[index]} />
                   <span>{benefit}</span>
                 </li>
               ))}
