@@ -225,8 +225,12 @@
 .notebook-tab-icon {
   width: 24px;
   height: 24px;
-  object-fit: contain;
+  color: var(--dojeon-color-gray-600);
   opacity: 0.38;
+}
+
+.notebook-tab-active {
+  color: var(--dojeon-color-gray-800);
 }
 
 .notebook-tab-label {
@@ -243,5 +247,6 @@
 }
 
 .notebook-tab-active .notebook-tab-icon {
+  color: var(--dojeon-color-gray-800);
   opacity: 1;
 }

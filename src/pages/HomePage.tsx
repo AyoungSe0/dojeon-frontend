@@ -9,6 +9,7 @@ import lessonCharacterImage from '../assets/9.png'
 import practiceComingSoonImage from '../assets/2.png'
 import type { LastLesson } from '../types/home.types.ts'
 import { useHomeResume } from '../hooks/useHomeResume.ts'
+import ThemedIcon from '../components/ThemedIcon'
 
 const tabs = [
   { icon: homeIcon, label: 'HOME' },
@@ -261,7 +262,7 @@ function HomePage({
               if (tab.label === 'PROFILE') onOpenProfile()
             }}
           >
-            <img className="home-tab-icon" src={tab.icon} alt="" aria-hidden="true" />
+            <ThemedIcon className="home-tab-icon" src={tab.icon} />
             <span className="home-tab-label">{tab.label}</span>
           </button>
         ))}

@@ -8,6 +8,7 @@ import contactSupportIcon from '../assets/support.svg'
 import faqIcon from '../assets/question.svg'
 import feedbackIcon from '../assets/Feedback_icon.svg'
 import logoutIcon from '../assets/logout.svg'
+import ThemedIcon from '../components/ThemedIcon'
 
 interface SettingPageProps {
   onBack: () => void
@@ -185,12 +186,7 @@ function SettingPage({
             onClick={onBack}
             aria-label="Go back"
           >
-            <img
-              src={backArrowIcon}
-              alt=""
-              className="setting-back-icon"
-              aria-hidden="true"
-            />
+            <ThemedIcon src={backArrowIcon} className="setting-back-icon" />
           </button>
           <h1 className="setting-title">Setting</h1>
         </header>
@@ -204,12 +200,7 @@ function SettingPage({
               role="listitem"
               onClick={onOpenAccountInfo}
             >
-              <img
-                src={accountIcon}
-                alt=""
-                className="setting-account-icon"
-                aria-hidden="true"
-              />
+              <ThemedIcon src={accountIcon} className="setting-account-icon" />
               <span className="setting-account-label">Account info</span>
             </button>
             <button
@@ -218,12 +209,7 @@ function SettingPage({
               role="listitem"
               onClick={onOpenPreferences}
             >
-              <img
-                src={preferenceIcon}
-                alt=""
-                className="setting-account-icon"
-                aria-hidden="true"
-              />
+              <ThemedIcon src={preferenceIcon} className="setting-account-icon" />
               <span className="setting-account-label">Preferences</span>
             </button>
             <button
@@ -234,12 +220,7 @@ function SettingPage({
               disabled={isSavingNotification}
               onClick={() => void handleTogglePushNotifications()}
             >
-              <img
-                src={notificationIcon}
-                alt=""
-                className="setting-account-icon"
-                aria-hidden="true"
-              />
+              <ThemedIcon src={notificationIcon} className="setting-account-icon" />
               <span className="setting-account-label">Notifications</span>
               <span
                 className={`setting-notification-toggle ${
@@ -262,25 +243,15 @@ function SettingPage({
           <h2 className="setting-section-title">Support</h2>
           <div className="setting-account-card" role="list" aria-label="support settings">
             <div className="setting-account-item setting-account-item-static" role="listitem">
-              <img src={faqIcon} alt="" className="setting-account-icon" aria-hidden="true" />
+              <ThemedIcon src={faqIcon} className="setting-account-icon" />
               <span className="setting-account-label">FAQ</span>
             </div>
             <div className="setting-account-item setting-account-item-static" role="listitem">
-              <img
-                src={contactSupportIcon}
-                alt=""
-                className="setting-account-icon"
-                aria-hidden="true"
-              />
+              <ThemedIcon src={contactSupportIcon} className="setting-account-icon" />
               <span className="setting-account-label">Contact Support</span>
             </div>
             <div className="setting-account-item setting-account-item-static" role="listitem">
-              <img
-                src={feedbackIcon}
-                alt=""
-                className="setting-account-icon"
-                aria-hidden="true"
-              />
+              <ThemedIcon src={feedbackIcon} className="setting-account-icon" />
               <span className="setting-account-label">Feedback</span>
             </div>
           </div>
@@ -292,7 +263,7 @@ function SettingPage({
           onClick={openSignOutSheet}
           disabled={isSigningOut}
         >
-          <img src={logoutIcon} alt="" className="setting-signout-icon" aria-hidden="true" />
+          <ThemedIcon src={logoutIcon} className="setting-signout-icon" />
           <span>{isSigningOut ? 'Signing out...' : 'Log Out'}</span>
         </button>
 

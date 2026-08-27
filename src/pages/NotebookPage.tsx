@@ -4,6 +4,7 @@ import classIcon from '../assets/Class.svg'
 import fileIcon from '../assets/file.svg'
 import bookOpenIcon from '../assets/book-open.svg'
 import profileIcon from '../assets/user.svg'
+import ThemedIcon from '../components/ThemedIcon'
 import { useScrapDashboard } from '../hooks/useScrapDashboard.ts'
 import type { GrammarPreviewItem, VocabularyPreviewGroup } from '../types/scraps.types.ts'
 
@@ -186,7 +187,7 @@ function NotebookPage({
               }
             }}
           >
-            <img className="notebook-tab-icon" src={tab.icon} alt="" aria-hidden="true" />
+            <ThemedIcon className="notebook-tab-icon" src={tab.icon} />
             <span className="notebook-tab-label">{tab.label}</span>
           </button>
         ))}

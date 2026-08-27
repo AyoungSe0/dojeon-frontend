@@ -462,8 +462,12 @@
 .home-tab-icon {
   width: 24px;
   height: 24px;
-  object-fit: contain;
+  color: var(--dojeon-color-gray-600);
   opacity: 0.38;
+}
+
+.home-tab-active {
+  color: var(--dojeon-color-gray-800);
 }
 
 .home-tab-label {
@@ -480,6 +484,7 @@
 }
 
 .home-tab-active .home-tab-icon {
+  color: var(--dojeon-color-gray-800);
   opacity: 1;
 }
 

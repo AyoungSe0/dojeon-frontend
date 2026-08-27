@@ -4,6 +4,7 @@ import closeRoundedIcon from '../assets/close-rounded_icon.svg'
 import { defaultProfileImageSrc, profileImageOptions } from '../data/profileImages.ts'
 import { useUpdateUserMe } from '../hooks/useUpdateUserMe.ts'
 import { isUnauthorizedError } from '../services/apiError.ts'
+import ThemedIcon from './ThemedIcon'
 
 interface ProfileImageBottomSheetProps {
   currentImageUrl: string | null
@@ -136,7 +137,7 @@ function ProfileImageBottomSheet({
             onClick={closeSheet}
             aria-label="Close profile image chooser"
           >
-            <img src={closeRoundedIcon} alt="" aria-hidden="true" />
+            <ThemedIcon src={closeRoundedIcon} className="profile-image-sheet-close-icon" />
           </button>
 
           <h2 id="profile-image-title" className="profile-image-sheet-title">

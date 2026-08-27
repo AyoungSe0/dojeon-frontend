@@ -13,6 +13,7 @@ import { useUserMe } from '../hooks/useUserMe.ts'
 import ProfileImageBottomSheet from '../components/ProfileImageBottomSheet'
 import type { UserMeData } from '../types/user.types.ts'
 import { isUnauthorizedError } from '../services/apiError.ts'
+import ThemedIcon from '../components/ThemedIcon'
 
 const tabs = [
   { icon: homeIcon, label: 'HOME' },
@@ -348,7 +349,7 @@ function ProfileMainPage({
             onClick={onOpenSetting}
             aria-label="Open settings"
           >
-            <img src={settingIcon} alt="" aria-hidden="true" />
+            <ThemedIcon src={settingIcon} className="profile-main-setting-icon" />
           </button>
 
           <div className="profile-main-identity">
@@ -367,7 +368,7 @@ function ProfileMainPage({
                 onClick={() => setIsProfileImageSheetOpen(true)}
                 aria-label="Edit profile image"
               >
-                <img src={editIcon} alt="" aria-hidden="true" />
+                <ThemedIcon src={editIcon} className="profile-main-avatar-edit-icon" />
               </button>
             </div>
             <div className="profile-main-copy">
@@ -569,7 +570,7 @@ function ProfileMainPage({
               }
             }}
           >
-            <img className="profile-main-tab-icon" src={tab.icon} alt="" aria-hidden="true" />
+            <ThemedIcon className="profile-main-tab-icon" src={tab.icon} />
             <span className="profile-main-tab-label">{tab.label}</span>
           </button>
         ))}

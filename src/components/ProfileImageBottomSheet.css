@@ -49,10 +49,9 @@
   cursor: pointer;
 }
 
-.profile-image-sheet-close img {
+.profile-image-sheet-close-icon {
   width: 100%;
   height: 100%;
-  display: block;
 }
 
 .profile-image-sheet-body {
