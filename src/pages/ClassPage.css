@@ -328,8 +328,12 @@
 .class-tab-icon {
   width: 24px;
   height: 24px;
-  object-fit: contain;
+  color: var(--dojeon-color-gray-600);
   opacity: 0.38;
+}
+
+.class-tab-active {
+  color: var(--dojeon-color-gray-800);
 }
 
 .class-tab-label {
@@ -339,6 +343,7 @@
 }
 
 .class-tab-active .class-tab-icon {
+  color: var(--dojeon-color-gray-800);
   opacity: 1;
 }
 

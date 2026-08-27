@@ -5,6 +5,7 @@ import classIcon from '../assets/Class.svg'
 import fileIcon from '../assets/file.svg'
 import bookOpenIcon from '../assets/book-open.svg'
 import profileIcon from '../assets/user.svg'
+import ThemedIcon from '../components/ThemedIcon'
 import { useCoursesDashboard } from '../hooks/useCoursesDashboard.ts'
 import type { DashboardCourse } from '../types/dasboard.types.ts'
 
@@ -343,7 +344,7 @@ function ClassPage({
               if (tab.label === 'PROFILE') onOpenProfile()
             }}
           >
-            <img className="class-tab-icon" src={tab.icon} alt="" aria-hidden="true" />
+            <ThemedIcon className="class-tab-icon" src={tab.icon} />
             <span className="class-tab-label">{tab.label}</span>
           </button>
         ))}

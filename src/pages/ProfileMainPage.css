@@ -68,11 +68,10 @@
   cursor: pointer;
 }
 
-.profile-main-setting-button img {
+.profile-main-setting-icon {
   width: 100%;
   height: 100%;
-  display: block;
-  object-fit: contain;
+  color: var(--dojeon-color-gray-900);
 }
 
 .profile-main-identity {
@@ -120,11 +119,10 @@
   box-shadow: 0 3px 8px rgba(0, 0, 0, 0.18);
 }
 
-.profile-main-avatar-edit img {
+.profile-main-avatar-edit-icon {
   width: 13px;
   height: 13px;
-  display: block;
-  filter: brightness(0) invert(1);
+  color: var(--dojeon-color-background);
 }
 
 .profile-main-avatar-image {
@@ -659,7 +657,7 @@
 .profile-main-tab-icon {
   width: 24px;
   height: 24px;
-  object-fit: contain;
+  color: var(--dojeon-color-gray-600);
   opacity: 0.38;
 }
 
@@ -681,6 +679,7 @@
 }
 
 .profile-main-tab-active .profile-main-tab-icon {
+  color: var(--dojeon-color-gray-800);
   opacity: 1;
 }
 

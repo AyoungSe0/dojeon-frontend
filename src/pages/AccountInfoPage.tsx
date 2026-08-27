@@ -3,6 +3,7 @@ import './AccountInfoPage.css'
 import backArrowIcon from '../assets/BackArrow.svg'
 import editIcon from '../assets/edit.svg'
 import trashIcon from '../assets/trash.svg'
+import ThemedIcon from '../components/ThemedIcon'
 
 interface AccountInfoPageProps {
   email: string
@@ -362,12 +363,7 @@ function AccountInfoPage({
             onClick={onBack}
             aria-label="Go back"
           >
-            <img
-              src={backArrowIcon}
-              alt=""
-              className="account-info-back-icon"
-              aria-hidden="true"
-            />
+            <ThemedIcon src={backArrowIcon} className="account-info-back-icon" />
           </button>
           <h1 className="account-info-title">Account info</h1>
         </header>
@@ -392,12 +388,7 @@ function AccountInfoPage({
                     onClick={() => openEditSheet(item.editField)}
                     aria-label={`Change ${item.label}`}
                   >
-                    <img
-                      src={editIcon}
-                      alt=""
-                      className="account-info-edit-icon"
-                      aria-hidden="true"
-                    />
+                    <ThemedIcon src={editIcon} className="account-info-edit-icon" />
                   </button>
                 ) : null}
               </div>
@@ -411,7 +402,7 @@ function AccountInfoPage({
             className="account-info-delete-button"
             onClick={() => setIsDeleteSheetOpen(true)}
           >
-            <img src={trashIcon} alt="" aria-hidden="true" />
+            <ThemedIcon src={trashIcon} className="account-info-delete-icon" />
             <span>Delete Account</span>
           </button>
         ) : null}

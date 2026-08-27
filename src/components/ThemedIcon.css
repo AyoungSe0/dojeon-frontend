@@ -1,0 +1,7 @@
+.themed-icon {
+  display: inline-block;
+  flex: 0 0 auto;
+  background-color: currentColor;
+  -webkit-mask: var(--themed-icon-url) center / contain no-repeat;
+  mask: var(--themed-icon-url) center / contain no-repeat;
+}

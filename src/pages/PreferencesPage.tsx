@@ -4,6 +4,7 @@ import './PreferencesPage.css'
 import backArrowIcon from '../assets/BackArrow.svg'
 import checkIcon from '../assets/check_icon_gray.svg'
 import editIcon from '../assets/edit.svg'
+import ThemedIcon from '../components/ThemedIcon'
 import {
   getOnboardingPreferenceLabel,
   normalizeOnboardingPreferenceValue,
@@ -287,12 +288,7 @@ function PreferencesPage({
             onClick={onBack}
             aria-label="Go back"
           >
-            <img
-              src={backArrowIcon}
-              alt=""
-              className="preferences-back-icon"
-              aria-hidden="true"
-            />
+            <ThemedIcon src={backArrowIcon} className="preferences-back-icon" />
           </button>
           <h1 className="preferences-title">Preferences</h1>
         </header>
@@ -317,12 +313,7 @@ function PreferencesPage({
                   disabled={isSaving}
                   aria-label={`Change ${preference.label}`}
                 >
-                  <img
-                    src={editIcon}
-                    alt=""
-                    className="preferences-edit-icon"
-                    aria-hidden="true"
-                  />
+                  <ThemedIcon src={editIcon} className="preferences-edit-icon" />
                 </button>
               </div>
             </article>
@@ -381,11 +372,9 @@ function PreferencesPage({
                       tabIndex={optionIndex === tabbableOptionIndex ? 0 : -1}
                     >
                       <span>{option.label}</span>
-                      <img
+                      <ThemedIcon
                         src={checkIcon}
-                        alt=""
                         className="preferences-sheet-check-icon"
-                        aria-hidden="true"
                       />
                     </button>
                   )

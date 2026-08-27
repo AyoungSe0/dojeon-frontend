@@ -45,7 +45,6 @@
 .account-info-back-icon {
   width: 28px;
   height: 28px;
-  display: block;
 }
 
 .account-info-title {
@@ -125,10 +124,7 @@
 .account-info-edit-icon {
   width: 24px;
   height: 24px;
-  filter: brightness(0) saturate(100%) invert(12%) sepia(0%) saturate(0%) hue-rotate(177deg)
-    brightness(95%) contrast(90%) drop-shadow(0.35px 0 0 var(--dojeon-color-gray-800))
-    drop-shadow(-0.35px 0 0 var(--dojeon-color-gray-800))
-    drop-shadow(0 0.35px 0 var(--dojeon-color-gray-800));
+  color: var(--dojeon-color-gray-800);
 }
 
 .account-info-value {
@@ -258,7 +254,7 @@
   text-align: left;
 }
 
-.account-info-delete-button img {
+.account-info-delete-icon {
   width: 18px;
   height: 18px;
 }

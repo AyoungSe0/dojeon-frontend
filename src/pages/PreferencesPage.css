@@ -44,7 +44,6 @@
 .preferences-back-icon {
   width: 28px;
   height: 28px;
-  display: block;
 }
 
 .preferences-title {
@@ -136,10 +135,7 @@
 .preferences-edit-icon {
   width: 24px;
   height: 24px;
-  filter: brightness(0) saturate(100%) invert(12%) sepia(0%) saturate(0%) hue-rotate(177deg)
-    brightness(95%) contrast(90%) drop-shadow(0.35px 0 0 var(--dojeon-color-gray-800))
-    drop-shadow(-0.35px 0 0 var(--dojeon-color-gray-800))
-    drop-shadow(0 0.35px 0 var(--dojeon-color-gray-800));
+  color: var(--dojeon-color-gray-800);
 }
 
 .preferences-sheet-backdrop {
@@ -251,12 +247,11 @@
 .preferences-sheet-check-icon {
   width: 24px;
   height: 24px;
-  flex: 0 0 auto;
+  color: var(--dojeon-color-gray-300);
 }
 
 .preferences-sheet-option.selected .preferences-sheet-check-icon {
-  filter: brightness(0) saturate(100%) invert(12%) sepia(0%) saturate(0%) hue-rotate(177deg)
-    brightness(95%) contrast(90%);
+  color: var(--dojeon-color-gray-800);
 }
 
 .preferences-sheet-save-button {
