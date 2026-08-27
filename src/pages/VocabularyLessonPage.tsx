@@ -300,7 +300,6 @@ function VocabularyLessonPage({
     if (!event.isPrimary) return
 
     pointerStartRef.current = { pointerId: event.pointerId, clientX: event.clientX }
-    event.currentTarget.setPointerCapture(event.pointerId)
   }
 
   const handlePointerUp = (event: PointerEvent<HTMLElement>) => {
@@ -309,9 +308,6 @@ function VocabularyLessonPage({
 
     const deltaX = event.clientX - pointerStart.clientX
     pointerStartRef.current = null
-    if (event.currentTarget.hasPointerCapture(event.pointerId)) {
-      event.currentTarget.releasePointerCapture(event.pointerId)
-    }
 
     if (Math.abs(deltaX) < swipeThreshold) return
 

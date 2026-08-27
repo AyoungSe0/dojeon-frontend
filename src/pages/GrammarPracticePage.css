@@ -3007,6 +3007,13 @@
   text-align: left;
 }
 
+.grammar-practice-next-grammar-note-description-grammar {
+  display: -webkit-box;
+  overflow: hidden;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 3;
+}
+
 .grammar-practice-next-grammar-note-description-vocab {
   margin-top: 15px;
 }

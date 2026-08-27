@@ -493,7 +493,7 @@ function LessonDetailPage({
                   key={section.sectionId}
                   type="button"
                   className={`lesson-detail-module-card ${
-                    effectiveSelectedModuleId === section.sectionId || isCompleted
+                    effectiveSelectedModuleId === section.sectionId
                       ? 'lesson-detail-module-card-selected'
                       : ''
                   } ${isCompleted ? 'lesson-detail-module-card-completed' : ''}`}
