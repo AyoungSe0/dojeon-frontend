@@ -688,7 +688,6 @@ function GrammarPracticePage({
   const currentQuestionPosition =
     practiceItemCount > 1 ? `, question ${practiceItemIndex + 1} of ${practiceItemCount}` : ''
   const practiceProgressLabel = `Step ${practiceProgressIndex + 1} of ${practiceProgressStepCount}${currentQuestionPosition}`
-  const contentLanguage = toContentLanguage(language)
   const isTranslationRtl = isRtlContentLanguage(contentLanguage)
   // 서버 설명이 있으면 mother language 에 맞는 것을 쓴다.
   // 없으면 개발 서버에서만 시안 문구로 폴백하고, 운영에서는 설명 영역을 비워 둔다.
