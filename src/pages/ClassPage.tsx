@@ -23,8 +23,13 @@ const fallbackProgressPercent = 18
 const trialTargetDays = 7
 const trialLabel = `${trialTargetDays}-day Trial available`
 
-function getClassProgressFillWidth(activeCourseIndex: number, dotCount: number): string {
+function getClassProgressFillWidth(
+  activeCourseIndex: number,
+  dotCount: number,
+  progressPercent: number,
+): string {
   if (activeCourseIndex < 0) return '0%'
+  if (dotCount <= 1) return `${Math.min(100, Math.max(0, progressPercent))}%`
   const targetDotIndex = activeCourseIndex + 1
   if (targetDotIndex >= dotCount - 1) return '100%'
 
@@ -73,6 +78,14 @@ function getDisplayCourses(apiCourses: DashboardCourse[]): DashboardCourse[] {
   })
 }
 
+function getClassProgressDotLeft(index: number, dotCount: number): string {
+  if (dotCount <= 1) return '50%'
+
+  return `calc(${progressDotInset}px + ((100% - ${progressDotInset * 2}px) / ${
+    dotCount - 1
+  }) * ${index})`
+}
+
 interface ClassPageProps {
   preferFallbackContent?: boolean
   defaultOpenCourseOrder?: number
@@ -99,8 +112,11 @@ function ClassPage({
 
   const resumeBanner = data?.resumeBanner ?? null
   const apiCourses = useMemo(() => data?.courses ?? [], [data])
-  const courses = useMemo(() => getDisplayCourses(apiCourses), [apiCourses])
-  const isUsingFallbackCourses = apiCourses.length === 0
+  const courses = useMemo(
+    () => (preferFallbackContent ? getDisplayCourses(apiCourses) : apiCourses),
+    [apiCourses, preferFallbackContent],
+  )
+  const isUsingFallbackCourses = preferFallbackContent && apiCourses.length === 0
   const isUnauthorized = error?.status === 401 || error?.status === 403
 
   useEffect(() => {
@@ -109,9 +125,9 @@ function ClassPage({
 
   const progressPercent = useMemo(() => {
     if (isUsingFallbackCourses) return fallbackProgressPercent
-    if (!resumeBanner) return 0
+    if (!resumeBanner) return null
     const activeCourse = courses.find((c) => c.courseId === resumeBanner.courseId)
-    return activeCourse?.overallProgressPercent ?? resumeBanner.overallProgressPercent ?? 0
+    return activeCourse?.overallProgressPercent ?? resumeBanner.overallProgressPercent ?? null
   }, [courses, isUsingFallbackCourses, resumeBanner])
 
   const activeCourseIndex = (() => {
@@ -122,7 +138,11 @@ function ClassPage({
     return index >= 0 ? index : 0
   })()
   const classProgressDotCount = Math.max(1, courses.length)
-  const progressFillWidth = getClassProgressFillWidth(activeCourseIndex, classProgressDotCount)
+  const progressFillWidth = getClassProgressFillWidth(
+    activeCourseIndex,
+    classProgressDotCount,
+    progressPercent ?? 0,
+  )
 
   const openCourseIds = useMemo(() => {
     const open = new Set<number>()
@@ -158,7 +178,7 @@ function ClassPage({
 
   if (isUnauthorized) return null
 
-  if (error && !isUsingFallbackCourses && !preferFallbackContent) {
+  if (error && !preferFallbackContent) {
     return (
       <main className="class-screen">
         <section className="class-content">
@@ -174,37 +194,37 @@ function ClassPage({
   return (
     <main className="class-screen">
       <section className="class-content">
-        <section className="class-progress-card">
-          <h1 className="class-page-title">My progress</h1>
-          <p className="class-progress-complete">{progressPercent}% complete</p>
-          <div className="class-progress-bar" role="list" aria-label="class progress">
-            <span className="class-progress-track" aria-hidden="true" />
-            <span
-              className="class-progress-fill"
-              style={{ width: progressFillWidth }}
-              aria-hidden="true"
-            />
-            {Array.from({ length: classProgressDotCount }).map((_, index) => (
+        {courses.length > 0 && progressPercent !== null ? (
+          <section className="class-progress-card">
+            <h1 className="class-page-title">My progress</h1>
+            <p className="class-progress-complete">{progressPercent}% complete</p>
+            <div className="class-progress-bar" role="list" aria-label="class progress">
+              <span className="class-progress-track" aria-hidden="true" />
               <span
-                key={index}
-                className={`class-progress-dot ${
-                  index <= activeCourseIndex
-                    ? 'class-progress-dot-past'
-                    : 'class-progress-dot-upcoming'
-                }`}
-                style={{
-                  left: `calc(${progressDotInset}px + ((100% - ${progressDotInset * 2}px) / ${
-                    classProgressDotCount - 1
-                  }) * ${index})`,
-                }}
-                role="listitem"
+                className="class-progress-fill"
+                style={{ width: progressFillWidth }}
+                aria-hidden="true"
               />
-            ))}
-          </div>
-        </section>
+              {Array.from({ length: courses.length }).map((_, index) => (
+                <span
+                  key={index}
+                  className={`class-progress-dot ${
+                    index <= activeCourseIndex
+                      ? 'class-progress-dot-past'
+                      : 'class-progress-dot-upcoming'
+                  }`}
+                  style={{ left: getClassProgressDotLeft(index, classProgressDotCount) }}
+                  role="listitem"
+                />
+              ))}
+            </div>
+          </section>
+        ) : null}
 
         <section className="class-course-list" aria-label="courses">
-          {courses.map((course) => {
+          {courses.length === 0 ? (
+            <p className="class-empty">No courses available yet.</p>
+          ) : courses.map((course) => {
             const isOpen = openCourseIds.has(course.courseId)
             const courseLabel = `Course ${course.orderNum || course.courseId}`
 
@@ -315,6 +335,7 @@ function ClassPage({
             key={tab.label}
             type="button"
             className={`class-tab ${tab.label === 'CLASS' ? 'class-tab-active' : ''}`}
+            aria-current={tab.label === 'CLASS' ? 'page' : undefined}
             onClick={() => {
               if (tab.label === 'HOME') onOpenHome()
               if (tab.label === 'PRACTICE') onOpenPractice()

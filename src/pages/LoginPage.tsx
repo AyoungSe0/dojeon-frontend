@@ -1,32 +1,72 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import './LoginPage.css'
 import loginCharacter from '../assets/9.png'
 import { LOGIN_CREDENTIALS_ERROR_MESSAGE } from '../services/auth'
+import { renderGoogleButton } from '../services/googleIdentity'
 
 interface LoginPageProps {
   onSignUp: () => void
   onLogin?: (credentials: { email: string; password: string }) => Promise<void>
+  onGoogleLogin?: (idToken: string) => Promise<void>
 }
 
-function LoginPage({ onSignUp, onLogin }: LoginPageProps) {
+function LoginPage({ onSignUp, onLogin, onGoogleLogin }: LoginPageProps) {
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [loginError, setLoginError] = useState('')
   const [isSubmitting, setIsSubmitting] = useState(false)
+  const googleButtonRef = useRef<HTMLDivElement>(null)
+  const onGoogleLoginRef = useRef(onGoogleLogin)
+  const isSubmittingRef = useRef(false)
 
   useEffect(() => {
-    if (!loginError) {
-      return
+    onGoogleLoginRef.current = onGoogleLogin
+  }, [onGoogleLogin])
+
+  useEffect(() => {
+    const container = googleButtonRef.current
+    if (!container || !onGoogleLoginRef.current) return
+
+    let isMounted = true
+    let cleanup = () => {}
+    const showGoogleError = (error: Error) => {
+      if (isMounted) setLoginError(error.message)
     }
 
-    const timer = window.setTimeout(() => {
-      setLoginError('')
-    }, 3000)
+    void renderGoogleButton(
+      container,
+      async (idToken) => {
+        if (!isMounted || isSubmittingRef.current) return
+
+        isSubmittingRef.current = true
+        setIsSubmitting(true)
+        setLoginError('')
+        try {
+          await onGoogleLoginRef.current?.(idToken)
+        } catch (error) {
+          showGoogleError(
+            error instanceof Error
+              ? error
+              : new Error('Unable to log in with Google. Please try again.'),
+          )
+        } finally {
+          isSubmittingRef.current = false
+          if (isMounted) setIsSubmitting(false)
+        }
+      },
+      showGoogleError,
+    )
+      .then((dispose) => {
+        cleanup = dispose
+        if (!isMounted) cleanup()
+      })
+      .catch(showGoogleError)
 
     return () => {
-      window.clearTimeout(timer)
+      isMounted = false
+      cleanup()
     }
-  }, [loginError])
+  }, [])
 
   return (
     <main className="login-screen">
@@ -53,10 +93,11 @@ function LoginPage({ onSignUp, onLogin }: LoginPageProps) {
         onSubmit={async (e) => {
           e.preventDefault()
 
-          if (!onLogin || isSubmitting) {
+          if (!onLogin || isSubmitting || isSubmittingRef.current) {
             return
           }
 
+          isSubmittingRef.current = true
           setIsSubmitting(true)
           setLoginError('')
 
@@ -72,6 +113,7 @@ function LoginPage({ onSignUp, onLogin }: LoginPageProps) {
                 : LOGIN_CREDENTIALS_ERROR_MESSAGE,
             )
           } finally {
+            isSubmittingRef.current = false
             setIsSubmitting(false)
           }
         }}
@@ -80,6 +122,8 @@ function LoginPage({ onSignUp, onLogin }: LoginPageProps) {
           <span className="sr-only">Email</span>
           <input
             type="email"
+            name="email"
+            autoComplete="email"
             className="field"
             placeholder="Email"
             value={email}
@@ -95,6 +139,8 @@ function LoginPage({ onSignUp, onLogin }: LoginPageProps) {
           <span className="sr-only">Password</span>
           <input
             type="password"
+            name="password"
+            autoComplete="current-password"
             className="field"
             placeholder="Password"
             value={password}
@@ -106,19 +152,19 @@ function LoginPage({ onSignUp, onLogin }: LoginPageProps) {
           />
         </label>
 
-        <p className="forgot-password">Forget password?</p>
-
         <button type="submit" className="btn btn-primary login-btn" disabled={isSubmitting}>
           {isSubmitting ? 'LOGGING IN...' : 'LOG IN'}
         </button>
 
-        <button type="button" className="btn btn-ghost google-btn" disabled={isSubmitting}>
-          Log in with Google
-        </button>
+        <div
+          ref={googleButtonRef}
+          className="google-btn"
+          aria-label="Log in with Google"
+        />
       </form>
 
       <p className="signup-copy">
-        Don’t have account?
+        Don’t have an account?
         <button type="button" onClick={onSignUp} className="signup-link-btn">
           Sign up
         </button>

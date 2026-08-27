@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { useQueryClient } from '@tanstack/react-query'
 import './App.css'
 import SplashPage from './pages/SplashPage'
@@ -41,12 +41,14 @@ import {
   clearStoredAuthSession,
   getStoredAuthSession,
   login,
+  loginWithGoogle,
   logout,
   saveAuthSession,
   signup,
   type AuthSession,
   type AuthTokenData,
 } from './services/auth'
+import { getEmailFromGoogleIdToken } from './services/googleIdentity'
 
 const ONBOARDING_COMPLETED_KEY = 'dojeon:onboarding.completed'
 const ONBOARDING_USERNAME_KEY = 'dojeon:onboarding.username'
@@ -270,12 +272,18 @@ const getInitialVocabularyCardIndex = () => {
 }
 
 const getDevPreviewCourseOrder = () => {
-  if (getDevPreviewScreen() !== 'class') {
-    return undefined
-  }
+  if (getDevPreviewScreen() !== 'class') return undefined
 
   const course = Number.parseInt(getDevSearchParams().get('course') ?? '', 10)
   return Number.isFinite(course) ? Math.max(1, course) : undefined
+}
+
+const getScreenFromLocation = (authSession: AuthSession | null): Screen | null => {
+  const requestedScreen = new URLSearchParams(window.location.search).get('screen') as Screen | null
+  if (!requestedScreen || !devPreviewScreens.has(requestedScreen)) return null
+
+  const publicScreens = new Set<Screen>(['splash', 'login', 'signup', 'verify-email', 'verify-success'])
+  return authSession || publicScreens.has(requestedScreen) ? requestedScreen : 'login'
 }
 
 const getDevPreviewLessonModuleOrder = () => {
@@ -353,6 +361,9 @@ function App() {
     sessionSeed: string
   } | null>(null)
   const [settingBackScreen, setSettingBackScreen] = useState<'home' | 'profile-main'>('home')
+  const restoringHistoryRef = useRef(false)
+  const replaceNextHistoryRef = useRef(false)
+  const hasInitializedHistoryRef = useRef(false)
   const {
     data: userMeData,
     error: userMeError,
@@ -397,8 +408,74 @@ function App() {
     setAuthSession(null)
     setPendingSignup(null)
     setSettingBackScreen('home')
+    if (screen !== 'login') replaceNextHistoryRef.current = true
     setScreen('login')
-  }, [changeUserPassword, clearAccountScopedQueries, updateUserMe])
+  }, [changeUserPassword, clearAccountScopedQueries, screen, updateUserMe])
+
+  useEffect(() => {
+    const unsubscribe = queryClient.getQueryCache().subscribe((event) => {
+      if (event.type !== 'updated' || !getStoredAuthSession()) return
+      if (isUnauthorizedError(event.query.state.error)) handleUnauthorized()
+    })
+
+    return unsubscribe
+  }, [handleUnauthorized, queryClient])
+
+  useEffect(() => {
+    if (isDevPreview) return
+
+    const handlePopState = () => {
+      const nextScreen = getScreenFromLocation(getStoredAuthSession())
+      if (!nextScreen) return
+
+      if (nextScreen === screen) {
+        const params = new URLSearchParams(window.location.search)
+        params.set('screen', nextScreen)
+        window.history.replaceState(
+          { screen: nextScreen },
+          '',
+          `${window.location.pathname}?${params.toString()}${window.location.hash}`,
+        )
+        return
+      }
+
+      restoringHistoryRef.current = true
+      setScreen(nextScreen)
+    }
+
+    window.addEventListener('popstate', handlePopState)
+    return () => window.removeEventListener('popstate', handlePopState)
+  }, [isDevPreview, screen])
+
+  useEffect(() => {
+    if (isDevPreview) return
+
+    const params = new URLSearchParams(window.location.search)
+    params.set('screen', screen)
+    const nextUrl = `${window.location.pathname}?${params.toString()}${window.location.hash}`
+
+    if (!hasInitializedHistoryRef.current) {
+      window.history.replaceState({ screen }, '', nextUrl)
+      hasInitializedHistoryRef.current = true
+      replaceNextHistoryRef.current = false
+      return
+    }
+
+    if (restoringHistoryRef.current) {
+      restoringHistoryRef.current = false
+      window.history.replaceState({ screen }, '', nextUrl)
+      replaceNextHistoryRef.current = false
+      return
+    }
+
+    if (replaceNextHistoryRef.current) {
+      replaceNextHistoryRef.current = false
+      window.history.replaceState({ screen }, '', nextUrl)
+      return
+    }
+
+    window.history.pushState({ screen }, '', nextUrl)
+  }, [isDevPreview, screen])
 
   const hasCompletedOnboarding = isUserMeLoaded && userMeData?.profile.isOnboarded === true
   const shouldWaitForUserMe =
@@ -420,6 +497,7 @@ function App() {
 
   const showSplash = () => {
     setMinSplashElapsed(false)
+    if (screen !== 'splash') replaceNextHistoryRef.current = true
     setScreen('splash')
   }
 
@@ -494,8 +572,11 @@ function App() {
     }
 
     if (!authSession) {
+      const timer = window.setTimeout(() => {
+        replaceNextHistoryRef.current = true
         setScreen('login')
-        return
+      }, 0)
+      return () => window.clearTimeout(timer)
     }
 
     if (shouldWaitForUserMe) {
@@ -511,10 +592,10 @@ function App() {
       return
     }
 
-    const timer = window.setTimeout(
-      () => setScreen(hasCompletedOnboarding ? 'home' : 'onboarding'),
-      0,
-    )
+    const timer = window.setTimeout(() => {
+      replaceNextHistoryRef.current = true
+      setScreen(hasCompletedOnboarding ? 'home' : 'onboarding')
+    }, 0)
     return () => window.clearTimeout(timer)
   }, [
     authSession,
@@ -842,6 +923,7 @@ function App() {
               dailyGoal: savedDailyGoal,
               koreanGoal: savedKoreanGoal,
             })
+            replaceNextHistoryRef.current = true
             setScreen('home')
           }}
         />
@@ -1262,6 +1344,14 @@ function App() {
           onLogin={async (credentials) => {
             const tokenData = await login(credentials)
             persistAuthSession(credentials.email, tokenData)
+            setPendingSignup(null)
+            showSplash()
+          }}
+          onGoogleLogin={async (idToken) => {
+            const tokenData = await loginWithGoogle({ idToken })
+            const googleEmail = getEmailFromGoogleIdToken(idToken)
+
+            persistAuthSession(googleEmail || `google-user-${tokenData.userId}`, tokenData)
             setPendingSignup(null)
             showSplash()
           }}

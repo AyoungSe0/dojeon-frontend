@@ -1,4 +1,4 @@
-import { Fragment, useEffect, useMemo, useRef, useState } from 'react'
+import { Fragment, type KeyboardEvent, useEffect, useMemo, useRef, useState } from 'react'
 import './GrammarPracticePage.css'
 import exampleRightImage from '../assets/7.png'
 import exampleLeftImage from '../assets/10.png'
@@ -148,14 +148,15 @@ interface AnnotatedDialogueLineModel {
   source: AnnotatedLineSource
 }
 
-// 자료의 dialogues 를 대화/라인 인덱스를 유지한 채 펼쳐서
-// 각 라인의 jsonPath($.dialogues[i].lines[j].ko)를 함께 만든다.
+// 지문 데이터는 nested dialogues -> flat dialogue -> body 순서로 읽는다.
 function toAnnotatedDialogueLines(material: SectionMaterial | null): AnnotatedDialogueLineModel[] {
   if (!material) return []
 
+  const content = material.contentText
   const models: AnnotatedDialogueLineModel[] = []
-  ;(material.contentText?.dialogues ?? []).forEach((dialogue, dialogueIndex) => {
+  ;(content?.dialogues ?? []).forEach((dialogue, dialogueIndex) => {
     ;(dialogue.lines ?? []).forEach((line, lineIndex) => {
+      if (!line.ko.trim()) return
       models.push({
         key: `${dialogueIndex}-${lineIndex}`,
         speaker: line.speaker,
@@ -168,6 +169,42 @@ function toAnnotatedDialogueLines(material: SectionMaterial | null): AnnotatedDi
       })
     })
   })
+  if (models.length > 0) return models
+
+  ;(content?.dialogue ?? []).forEach((line, lineIndex) => {
+    if (!line.ko.trim()) return
+    models.push({
+      key: `dialogue-${lineIndex}`,
+      speaker: line.speaker,
+      line,
+      source: {
+        text: line.ko,
+        materialId: material.id,
+        jsonPath: `$.dialogue[${lineIndex}].ko`,
+      },
+    })
+  })
+  if (models.length > 0) return models
+
+  ;(content?.body ?? '')
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .filter((line) => line.length > 0)
+    .forEach((line, lineIndex) => {
+      const match = line.match(/^([^:：]+)[:：]\s*(.+)$/)
+      const speaker = match?.[1].trim() ?? ''
+      const text = (match?.[2] ?? line).trim()
+      models.push({
+        key: `body-${lineIndex}`,
+        speaker,
+        line: { speaker, ko: text, en: '', he: '' },
+        source: {
+          text,
+          materialId: material.id,
+          jsonPath: null,
+        },
+      })
+    })
   return models
 }
 
@@ -190,7 +227,7 @@ function findMaterialByKeywords(
   )
   if (byType) return byType
 
-  return materials.find((material) => (material.contentText?.dialogues?.length ?? 0) > 0) ?? null
+  return materials.find((material) => toAnnotatedDialogueLines(material).length > 0) ?? null
 }
 
 interface TextAnswerGrade {
@@ -270,14 +307,6 @@ function GrammarPracticePage({
   )
   const listeningDialogueLines = useMemo(
     () => toAnnotatedDialogueLines(listeningMaterial),
-    [listeningMaterial],
-  )
-  const listeningTranscriptLines = useMemo(
-    () =>
-      (listeningMaterial?.contentText.transcript ?? '')
-        .split(/\r?\n/)
-        .map((line) => line.trim())
-        .filter((line) => line.length > 0),
     [listeningMaterial],
   )
   const serverPracticeQuestions = useMemo(
@@ -393,6 +422,7 @@ function GrammarPracticePage({
   const [selectedAnswer, setSelectedAnswer] = useState('')
   const [revealedAnswers, setRevealedAnswers] = useState<string[]>([])
   const [choiceFeedback, setChoiceFeedback] = useState<ChoiceFeedback | null>(null)
+  const [isHintVisible, setIsHintVisible] = useState(false)
   const [typedAnswer, setTypedAnswer] = useState('')
   const [submittedTypedAnswer, setSubmittedTypedAnswer] = useState('')
   const [makeSentenceAnswer, setMakeSentenceAnswer] = useState('')
@@ -465,6 +495,8 @@ function GrammarPracticePage({
   const listeningDidDragRef = useRef(false)
   const listeningAnswersRef = useRef<Record<number, string>>({})
   const nextGrammarLessonRef = useRef<HTMLElement | null>(null)
+  const nextGrammarDialogRef = useRef<HTMLDivElement | null>(null)
+  const nextGrammarDialogTriggerRef = useRef<HTMLElement | null>(null)
 
   const isFillStep = practiceStep === 'fill'
   const isFillIntroStep = practiceStep === 'fill-intro'
@@ -493,6 +525,32 @@ function GrammarPracticePage({
   const showPracticeEmptyState = isPracticeStep && activePractice === null
   // 진행 표시줄 / 안내 문구 / Next 버튼은 실제 문항을 그릴 때만 띄운다.
   const showPracticeChrome = isPracticeStep && !showPracticeEmptyState
+  const fillPromptParts = useMemo(() => {
+    if (!isFillStep || activePractice === null) return null
+
+    const lines = activePractice.prefix
+      .split(/\r?\n/)
+      .map((line) => line.trim())
+      .filter(Boolean)
+    if (lines.length === 0) return null
+
+    if (lines.length === 1) {
+      const singleLineMatch = lines[0].match(/^(질문:\s*.+?\([^)]*\))\s+(.+)$/)
+      if (!singleLineMatch) return null
+
+      return {
+        promptLine: singleLineMatch[1],
+        beforeBlank: singleLineMatch[2],
+        afterBlank: activePractice.suffix,
+      }
+    }
+
+    return {
+      promptLine: lines.slice(0, -1).join(' '),
+      beforeBlank: lines[lines.length - 1],
+      afterBlank: activePractice.suffix,
+    }
+  }, [activePractice, isFillStep])
 
   const choiceOptions = activePractice?.options ?? []
   // 자유 작문 연습이 고정 질문("이것은 뭐예요?")을 들고 있으면 제시어 줄 대신 그 질문만 보여 준다.
@@ -518,7 +576,6 @@ function GrammarPracticePage({
   const isFreeWritingPractice =
     (activePractice?.kind === 'free' && activePractice.isSampleAnswer) ||
     matchedTextGrade?.isSample === true
-  const showMakeSample = isFreeWritingPractice && isAnswered && correctAnswer.length > 0
 
   let isCorrectAnswer: boolean
   let isWrongAnswer: boolean
@@ -618,7 +675,20 @@ function GrammarPracticePage({
     listeningTrackOffset -
     listeningQuestionIndexForDisplay * listeningTrackStride +
     listeningDragOffset
-  const progressDotPositions = [3, 21.8, 40.6, 59.4, 78.2, 97]
+  const practiceProgressStepCount = Math.max(practiceStages.length, 1)
+  const practiceProgressIndex =
+    currentStageIndex >= 0 ? currentStageIndex : practiceProgressStepCount - 1
+  const practiceProgressFill =
+    practiceProgressStepCount <= 1
+      ? 100
+      : (practiceProgressIndex / (practiceProgressStepCount - 1)) * 100
+  const progressDotPositions = Array.from({ length: practiceProgressStepCount }, (_, index) =>
+    practiceProgressStepCount <= 1 ? 50 : (index / (practiceProgressStepCount - 1)) * 100,
+  )
+  const currentQuestionPosition =
+    practiceItemCount > 1 ? `, question ${practiceItemIndex + 1} of ${practiceItemCount}` : ''
+  const practiceProgressLabel = `Step ${practiceProgressIndex + 1} of ${practiceProgressStepCount}${currentQuestionPosition}`
+  const contentLanguage = toContentLanguage(language)
   const isTranslationRtl = isRtlContentLanguage(contentLanguage)
   // 서버 설명이 있으면 mother language 에 맞는 것을 쓴다.
   // 없으면 개발 서버에서만 시안 문구로 폴백하고, 운영에서는 설명 영역을 비워 둔다.
@@ -661,13 +731,68 @@ function GrammarPracticePage({
     | Record<NextGrammarVocabId, { title: string; description: string }>
     | null = grammarPracticeDemo?.vocabNotes ?? null
 
+  const rememberNextGrammarDialogTrigger = () => {
+    const activeElement = document.activeElement
+    if (activeElement instanceof HTMLElement) {
+      nextGrammarDialogTriggerRef.current = activeElement
+    }
+  }
+
+  const closeNextGrammarDialog = () => {
+    setActiveNextGrammarDialog(null)
+  }
+
+  const handleNextGrammarDialogKeyDown = (event: KeyboardEvent<HTMLDivElement>) => {
+    if (event.key === 'Escape') {
+      event.preventDefault()
+      closeNextGrammarDialog()
+      return
+    }
+
+    if (event.key !== 'Tab') return
+
+    const focusableElements = Array.from(
+      event.currentTarget.querySelectorAll<HTMLElement>(
+        'button:not([disabled]), [href], input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])',
+      ),
+    ).filter((element) => element.offsetParent !== null)
+
+    if (focusableElements.length === 0) {
+      event.preventDefault()
+      event.currentTarget.focus()
+      return
+    }
+
+    const firstElement = focusableElements[0]
+    const lastElement = focusableElements[focusableElements.length - 1]
+    const isOutsideDialog = !event.currentTarget.contains(document.activeElement)
+
+    if (
+      event.shiftKey &&
+      (document.activeElement === firstElement ||
+        document.activeElement === event.currentTarget ||
+        isOutsideDialog)
+    ) {
+      event.preventDefault()
+      lastElement.focus()
+    } else if (
+      !event.shiftKey &&
+      (document.activeElement === lastElement ||
+        document.activeElement === event.currentTarget ||
+        isOutsideDialog)
+    ) {
+      event.preventDefault()
+      firstElement.focus()
+    }
+  }
+
   const toggleShowGrammar = () => {
     setMarkMode((current) => (current === 'GRAMMAR' ? null : 'GRAMMAR'))
-    setActiveNextGrammarDialog(null)
+    closeNextGrammarDialog()
   }
   const toggleShowVocab = () => {
     setMarkMode((current) => (current === 'VOCAB' ? null : 'VOCAB'))
-    setActiveNextGrammarDialog(null)
+    closeNextGrammarDialog()
   }
 
   // 목적지 조회가 404 등으로 실패했을 때 팝업에 대신 띄우는 문구.
@@ -681,6 +806,7 @@ function GrammarPracticePage({
     if (annotations.length === 0) return
     setAnnotationLessonBlockedMessage(null)
     setIsCheckingAnnotationTarget(false)
+    rememberNextGrammarDialogTrigger()
     setActiveNextGrammarDialog({
       kind: 'annotation',
       unitId: unit.id,
@@ -728,7 +854,7 @@ function GrammarPracticePage({
       return
     }
 
-    setActiveNextGrammarDialog(null)
+    closeNextGrammarDialog()
   }
 
   // GO TO LESSON 후 상단 뒤로가기로 복귀했을 때 저장해 둔 팝업을 다시 연다.
@@ -757,6 +883,7 @@ function GrammarPracticePage({
       if (!unit || !annotation) return
 
       setMarkMode(pendingAnnotationRestore.markMode)
+      rememberNextGrammarDialogTrigger()
       setActiveNextGrammarDialog({
         kind: 'annotation',
         unitId: unit.id,
@@ -786,25 +913,92 @@ function GrammarPracticePage({
   }
   const handleNextGrammarMarkPress = (noteId: NextGrammarNoteId) => {
     if (!showGrammar) return
-    setActiveNextGrammarDialog((prev) =>
-      prev?.kind === 'grammar' && prev.id === noteId ? null : { kind: 'grammar', id: noteId },
-    )
+    if (activeNextGrammarDialog?.kind === 'grammar' && activeNextGrammarDialog.id === noteId) {
+      closeNextGrammarDialog()
+      return
+    }
+    rememberNextGrammarDialogTrigger()
+    setActiveNextGrammarDialog({ kind: 'grammar', id: noteId })
   }
   const handleNextVocabMarkPress = (noteId: NextGrammarVocabId) => {
     if (!showVocab) return
-    setActiveNextGrammarDialog((prev) =>
-      prev?.kind === 'vocab' && prev.id === noteId ? null : { kind: 'vocab', id: noteId },
-    )
+    if (activeNextGrammarDialog?.kind === 'vocab' && activeNextGrammarDialog.id === noteId) {
+      closeNextGrammarDialog()
+      return
+    }
+    rememberNextGrammarDialogTrigger()
+    setActiveNextGrammarDialog({ kind: 'vocab', id: noteId })
   }
   const handleGoToNextGrammarLesson = () => {
-    setActiveNextGrammarDialog(null)
+    closeNextGrammarDialog()
     nextGrammarLessonRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+  }
+  const practiceHintText = useMemo(() => {
+    if (activePractice === null) return ''
+    const answer = activePractice.answers[0] ?? correctAnswer
+    if (answer) return isFreeWritingPractice ? `Example answer: ${answer}` : `Answer hint: ${answer}`
+    if (activePractice.fixedQuestion) return activePractice.fixedQuestion
+    return activePractice.prefix
+  }, [activePractice, correctAnswer, isFreeWritingPractice])
+  const hintButton = practiceHintText ? (
+    <button
+      type="button"
+      className="grammar-practice-hint-button"
+      aria-expanded={isHintVisible}
+      onClick={() => setIsHintVisible((current) => !current)}
+    >
+      Show hint
+    </button>
+  ) : null
+  const hintPanel = isHintVisible && practiceHintText ? (
+    <p className="grammar-practice-hint-text" role="status">
+      {practiceHintText}
+    </p>
+  ) : null
+  const moveReadingQuestion = (direction: 'prev' | 'next') => {
+    if (readingQuestions.length === 0) return
+    setReadingQuestionIndex((current) => {
+      if (direction === 'prev') return Math.max(current - 1, 0)
+      return Math.min(current + 1, readingQuestions.length - 1)
+    })
+  }
+  const moveListeningQuestion = (direction: 'prev' | 'next') => {
+    if (listeningQuestions.length === 0) return
+    setListeningQuestionIndex((current) => {
+      if (direction === 'prev') return Math.max(current - 1, 0)
+      return Math.min(current + 1, listeningQuestions.length - 1)
+    })
+  }
+  const handleReadingQuestionKeyDown = (event: KeyboardEvent<HTMLDivElement>) => {
+    if (event.target !== event.currentTarget) return
+
+    if (event.key === 'ArrowLeft') {
+      event.preventDefault()
+      moveReadingQuestion('prev')
+    }
+    if (event.key === 'ArrowRight') {
+      event.preventDefault()
+      moveReadingQuestion('next')
+    }
+  }
+  const handleListeningQuestionKeyDown = (event: KeyboardEvent<HTMLDivElement>) => {
+    if (event.target !== event.currentTarget) return
+
+    if (event.key === 'ArrowLeft') {
+      event.preventDefault()
+      moveListeningQuestion('prev')
+    }
+    if (event.key === 'ArrowRight') {
+      event.preventDefault()
+      moveListeningQuestion('next')
+    }
   }
   // 한 문항을 끝내고 다음 문항/단계로 넘어갈 때 입력과 채점 결과를 비운다.
   const resetPracticeAnswers = () => {
     setSelectedAnswer('')
     setRevealedAnswers([])
     setChoiceFeedback(null)
+    setIsHintVisible(false)
     setTypedAnswer('')
     setSubmittedTypedAnswer('')
     setMakeSentenceAnswer('')
@@ -1175,6 +1369,17 @@ function GrammarPracticePage({
     return () => window.clearTimeout(feedbackTimer)
   }, [choiceFeedback])
 
+  useEffect(() => {
+    if (activeNextGrammarDialog) {
+      nextGrammarDialogRef.current?.focus()
+      return
+    }
+
+    const trigger = nextGrammarDialogTriggerRef.current
+    if (trigger?.isConnected) trigger.focus()
+    nextGrammarDialogTriggerRef.current = null
+  }, [activeNextGrammarDialog])
+
   const handleReviewSubmit = async () => {
     if (reviewMarkComplete === null) return
 
@@ -1215,6 +1420,32 @@ function GrammarPracticePage({
     // 방금 끝낸 섹션 자료를 다시 불러와 같은 화면이 반복된다.
     onOpenNextSection(nextSection)
   }
+
+  const answerColumn = (
+    <div className="grammar-practice-answer-column">
+      {isFillStep ? (
+        <input
+          type="text"
+          className="grammar-practice-answer-input"
+          value={typedAnswer}
+          enterKeyHint="done"
+          onChange={(e) => setTypedAnswer(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter') {
+              e.preventDefault()
+              pushHistory()
+              void handleTextAnswerSubmit('fill', typedAnswer)
+            }
+          }}
+        />
+      ) : (
+        <div className="grammar-practice-answer-slot">{isAnswered ? selectedAnswer : null}</div>
+      )}
+      {isFillStep && isWrongAnswer ? (
+        <p className="grammar-practice-correct-answer grammar-practice-correct-answer-fill">{correctAnswer}</p>
+      ) : null}
+    </div>
+  )
 
   if (isFillIntroStep) {
     return (
@@ -1334,18 +1565,20 @@ function GrammarPracticePage({
         )}
 
         {!showPracticeChrome ? null : (
-          <div className="grammar-practice-progress" role="list" aria-label="grammar practice progress">
+          <div className="grammar-practice-progress" role="list" aria-label={`grammar practice progress, ${practiceProgressLabel}`}>
             <span className="grammar-practice-progress-track" aria-hidden="true" />
-            <span className="grammar-practice-progress-fill" style={{ width: '17.5%' }} aria-hidden="true" />
-            {Array.from({ length: 6 }).map((_, index) => (
+            <span className="grammar-practice-progress-fill" style={{ width: `${practiceProgressFill}%` }} aria-hidden="true" />
+            <span className="grammar-practice-sr-only" aria-live="polite">{practiceProgressLabel}</span>
+            {progressDotPositions.map((position, index) => (
               <span
                 key={index}
                 className={`grammar-practice-progress-dot ${
-                  index <= 0 ? 'grammar-practice-progress-dot-past' : 'grammar-practice-progress-dot-upcoming'
+                  index <= practiceProgressIndex ? 'grammar-practice-progress-dot-upcoming' : 'grammar-practice-progress-dot-past'
                 }`}
-                style={{ left: `${progressDotPositions[index]}%` }}
+                style={{ left: `${position}%` }}
                 role="listitem"
-                aria-current={index === 0 ? 'step' : undefined}
+                aria-label={`Step ${index + 1} of ${practiceProgressStepCount}`}
+                aria-current={index === practiceProgressIndex ? 'step' : undefined}
               />
             ))}
           </div>
@@ -1720,7 +1953,7 @@ function GrammarPracticePage({
                 disabled={explanationOnly}
                 onClick={() => {
                   pushHistory()
-                  setActiveNextGrammarDialog(null)
+                  closeNextGrammarDialog()
                   resetPracticeFlow()
                   // 실제로 존재하는 첫 연습 단계로 넘어간다. MCQ 가 없으면 choice 화면은 건너뛴다.
                   setPracticeStep(firstPracticeStep ?? 'review')
@@ -1784,19 +2017,12 @@ function GrammarPracticePage({
                 {isInitialMaterialsLoading ? null : listeningDialogueLines.length > 0 ? (
                   listeningDialogueLines.map((model) => (
                     <p key={model.key} className="grammar-practice-listening-script-line">
-                      <span className="grammar-practice-listening-script-speaker">{model.speaker}</span>{' '}
+                      {model.speaker ? (
+                        <>
+                          <span className="grammar-practice-listening-script-speaker">{model.speaker}</span>{' '}
+                        </>
+                      ) : null}
                       {renderAnnotatedLineText(model.source)}
-                    </p>
-                  ))
-                ) : listeningTranscriptLines.length > 0 ? (
-                  listeningTranscriptLines.map((line, index) => (
-                    <p key={`${index}-${line}`} className="grammar-practice-listening-script-line">
-                      {/* transcript 는 라인별 jsonPath 를 알 수 없어 원문 일치로만 unit 을 찾는다. */}
-                      {renderAnnotatedLineText({
-                        text: line,
-                        materialId: listeningMaterial?.id ?? null,
-                        jsonPath: null,
-                      })}
                     </p>
                   ))
                 ) : grammarPracticeDemo ? (
@@ -1825,6 +2051,11 @@ function GrammarPracticePage({
               </section>
               <div
                 className="grammar-practice-listening-question-viewport"
+                role="group"
+                aria-label="Listening questions"
+                aria-describedby="listening-question-position"
+                tabIndex={0}
+                onKeyDown={handleListeningQuestionKeyDown}
               onPointerDown={(event) => {
                 listeningDragStartXRef.current = event.clientX
                 listeningDragOffsetRef.current = 0
@@ -1876,6 +2107,9 @@ function GrammarPracticePage({
                 listeningDidDragRef.current = false
               }}
               >
+                <span id="listening-question-position" className="grammar-practice-sr-only" aria-live="polite">
+                  Listening question {Math.min(listeningQuestionIndexForDisplay + 1, Math.max(listeningQuestions.length, 1))} of {Math.max(listeningQuestions.length, 1)}
+                </span>
                 <div
                   className={`grammar-practice-listening-question-track ${
                     isListeningDragging ? 'is-dragging' : ''
@@ -1893,17 +2127,22 @@ function GrammarPracticePage({
                       className="grammar-practice-listening-question-slide"
                     >
                       {hasListeningResult ? (
-                        <span
-                          className={`grammar-practice-reading-result-art ${
-                            listeningGrade
-                              ? 'grammar-practice-reading-result-art-correct'
-                              : 'grammar-practice-reading-result-art-wrong'
-                          }`}
-                          aria-hidden="true"
-                        >
-                          <span className="grammar-practice-reading-result-mark" />
-                          <img src={listeningGrade ? choiceCorrectImage : choiceWrongImage} alt="" />
-                        </span>
+                        <>
+                          <span
+                            className={`grammar-practice-reading-result-art ${
+                              listeningGrade
+                                ? 'grammar-practice-reading-result-art-correct'
+                                : 'grammar-practice-reading-result-art-wrong'
+                            }`}
+                            aria-hidden="true"
+                          >
+                            <span className="grammar-practice-reading-result-mark" />
+                            <img src={listeningGrade ? choiceCorrectImage : choiceWrongImage} alt="" />
+                          </span>
+                          <span className="grammar-practice-answer-feedback" role="status">
+                            {listeningGrade ? 'Good Job!' : 'Wrong'}
+                          </span>
+                        </>
                       ) : null}
                       <div className="grammar-practice-listening-question-card">
                         <p className="grammar-practice-listening-question-title">{question.title}</p>
@@ -1978,6 +2217,28 @@ function GrammarPracticePage({
                     : '이 수업에는 듣기 문제가 없어요. 대본을 확인한 뒤 다음으로 넘어가세요.'}
                 </p>
               ) : null}
+              {listeningQuestions.length > 1 ? (
+                <div className="grammar-practice-question-controls">
+                  <button
+                    type="button"
+                    className="grammar-practice-question-control"
+                    disabled={listeningQuestionIndexForDisplay <= 0}
+                    onClick={() => moveListeningQuestion('prev')}
+                    aria-label="Previous listening question"
+                  >
+                    ‹
+                  </button>
+                  <button
+                    type="button"
+                    className="grammar-practice-question-control"
+                    disabled={listeningQuestionIndexForDisplay >= listeningQuestions.length - 1}
+                    onClick={() => moveListeningQuestion('next')}
+                    aria-label="Next listening question"
+                  >
+                    ›
+                  </button>
+                </div>
+              ) : null}
               <div className="grammar-practice-listening-dots" aria-label="listening question progress">
                 {listeningQuestions.map((question, index) => (
                   <span
@@ -1987,6 +2248,8 @@ function GrammarPracticePage({
                         ? 'grammar-practice-listening-dot-active'
                         : ''
                     }`}
+                    aria-label={`Question ${index + 1} of ${listeningQuestions.length}`}
+                    aria-current={index === listeningQuestionIndexForDisplay ? 'step' : undefined}
                   />
                 ))}
               </div>
@@ -2043,9 +2306,13 @@ function GrammarPracticePage({
               {readingDialogueLines.length > 0 ? (
                 readingDialogueLines.map((model) => (
                   <p key={model.key} className="grammar-practice-reading-line">
-                    <span className={`grammar-practice-reading-name ${showVocab ? 'is-visible' : ''}`}>
-                      {model.speaker}
-                    </span>{' '}
+                    {model.speaker ? (
+                      <>
+                        <span className={`grammar-practice-reading-name ${showVocab ? 'is-visible' : ''}`}>
+                          {model.speaker}
+                        </span>{' '}
+                      </>
+                    ) : null}
                     {renderAnnotatedLineText(model.source)}
                   </p>
                 ))
@@ -2079,6 +2346,11 @@ function GrammarPracticePage({
             </section>
             <div
               className="grammar-practice-reading-question-viewport"
+              role="group"
+              aria-label="Reading questions"
+              aria-describedby="reading-question-position"
+              tabIndex={0}
+              onKeyDown={handleReadingQuestionKeyDown}
               onPointerDown={(e) => {
                 readingDragStartXRef.current = e.clientX
                 readingDragOffsetRef.current = 0
@@ -2123,6 +2395,9 @@ function GrammarPracticePage({
                 readingDidDragRef.current = false
               }}
             >
+              <span id="reading-question-position" className="grammar-practice-sr-only" aria-live="polite">
+                Reading question {Math.min(readingQuestionIndex + 1, Math.max(readingQuestions.length, 1))} of {Math.max(readingQuestions.length, 1)}
+              </span>
               <div
                 className={`grammar-practice-reading-question-track ${isReadingDragging ? 'is-dragging' : ''}`}
                 style={{ transform: `translateX(${readingTrackTranslate}px)` }}
@@ -2138,20 +2413,25 @@ function GrammarPracticePage({
                   return (
                     <section key={question.questionId} className="grammar-practice-reading-question-slide">
                       {hasReadingChoiceResult ? (
-                        <span
-                          className={`grammar-practice-reading-result-art ${
-                            isReadingChoiceCorrect
-                              ? 'grammar-practice-reading-result-art-correct'
-                              : 'grammar-practice-reading-result-art-wrong'
-                          }`}
-                          aria-hidden="true"
-                        >
-                          <span className="grammar-practice-reading-result-mark" />
-                          <img
-                            src={isReadingChoiceCorrect ? choiceCorrectImage : choiceWrongImage}
-                            alt=""
-                          />
-                        </span>
+                        <>
+                          <span
+                            className={`grammar-practice-reading-result-art ${
+                              isReadingChoiceCorrect
+                                ? 'grammar-practice-reading-result-art-correct'
+                                : 'grammar-practice-reading-result-art-wrong'
+                            }`}
+                            aria-hidden="true"
+                          >
+                            <span className="grammar-practice-reading-result-mark" />
+                            <img
+                              src={isReadingChoiceCorrect ? choiceCorrectImage : choiceWrongImage}
+                              alt=""
+                            />
+                          </span>
+                          <span className="grammar-practice-answer-feedback" role="status">
+                            {isReadingChoiceCorrect ? 'Good Job!' : 'Wrong'}
+                          </span>
+                        </>
                       ) : null}
                       <div
                         className={`grammar-practice-reading-question-card ${
@@ -2265,11 +2545,35 @@ function GrammarPracticePage({
                   : '이 수업에는 읽기 문제가 없어요. 지문을 확인한 뒤 다음으로 넘어가세요.'}
               </p>
             ) : null}
+            {readingQuestions.length > 1 ? (
+              <div className="grammar-practice-question-controls">
+                <button
+                  type="button"
+                  className="grammar-practice-question-control"
+                  disabled={readingQuestionIndex <= 0}
+                  onClick={() => moveReadingQuestion('prev')}
+                  aria-label="Previous reading question"
+                >
+                  ‹
+                </button>
+                <button
+                  type="button"
+                  className="grammar-practice-question-control"
+                  disabled={readingQuestionIndex >= readingQuestions.length - 1}
+                  onClick={() => moveReadingQuestion('next')}
+                  aria-label="Next reading question"
+                >
+                  ›
+                </button>
+              </div>
+            ) : null}
             <div className="grammar-practice-reading-dots" aria-label="reading question progress">
               {readingQuestions.map((question, index) => (
                 <span
                   key={question.questionId}
                   className={`grammar-practice-reading-dot ${index === readingQuestionIndex ? 'grammar-practice-reading-dot-active' : ''}`}
+                  aria-label={`Question ${index + 1} of ${readingQuestions.length}`}
+                  aria-current={index === readingQuestionIndex ? 'step' : undefined}
                 />
               ))}
             </div>
@@ -2395,17 +2699,18 @@ function GrammarPracticePage({
                       }}
                     />
                   </div>
-                  {isWrongAnswer || showMakeSample ? (
+                  {isWrongAnswer ? (
                     <p className="grammar-practice-correct-answer grammar-practice-correct-answer-make">
-                      {showMakeSample ? `Sample: ${correctAnswer}` : correctAnswer}
+                      {correctAnswer}
                     </p>
                   ) : null}
                 </div>
               </div>
             </section>
             <div className="grammar-practice-learn-more-wrap">
-              <button type="button" className="grammar-practice-learn-more-button">Show hint</button>
+              {hintButton}
             </div>
+            {hintPanel}
             {showMakeResultPanel ? (
               <aside
                 className={`grammar-practice-result-panel grammar-practice-make-result-panel ${
@@ -2444,48 +2749,37 @@ function GrammarPracticePage({
               }`}
             >
               <div className="grammar-practice-question-stack">
-                <div className="grammar-practice-question-row">
-                  <p className="grammar-practice-question-text">{activePractice?.prefix ?? ''}</p>
-                  <div className="grammar-practice-answer-column">
-                    {isFillStep ? (
-                      <input
-                        type="text"
-                        className="grammar-practice-answer-input"
-                        value={typedAnswer}
-                        enterKeyHint="done"
-                        onChange={(e) => setTypedAnswer(e.target.value)}
-                        onKeyDown={(e) => {
-                          if (e.key === 'Enter') {
-                            e.preventDefault()
-                            pushHistory()
-                            void handleTextAnswerSubmit('fill', typedAnswer)
-                          }
-                        }}
-                      />
-                    ) : (
-                      <div className="grammar-practice-answer-slot">{isAnswered ? selectedAnswer : null}</div>
-                    )}
-                    {isFillStep && isWrongAnswer ? (
-                      <p className="grammar-practice-correct-answer grammar-practice-correct-answer-fill">
-                        {correctAnswer}
-                      </p>
+                {isFillStep && fillPromptParts ? (
+                  <div className="grammar-practice-fill-prompt-lines">
+                    <p className="grammar-practice-question-text grammar-practice-fill-prompt-line">
+                      {fillPromptParts.promptLine}
+                    </p>
+                    <div className="grammar-practice-question-row grammar-practice-fill-sentence-line">
+                      <span className="grammar-practice-question-text">{fillPromptParts.beforeBlank}</span>
+                      {answerColumn}
+                      <span className="grammar-practice-question-text">{fillPromptParts.afterBlank}</span>
+                    </div>
+                  </div>
+                ) : (
+                  <div className="grammar-practice-question-row">
+                    <p className="grammar-practice-question-text">{activePractice?.prefix ?? ''}</p>
+                    {answerColumn}
+                    {activePractice !== null && activePractice.suffix ? (
+                      <p className="grammar-practice-question-text">{activePractice.suffix}</p>
+                    ) : activePractice !== null && activePractice.questionId !== null ? (
+                      <span className="grammar-practice-question-dot">.</span>
                     ) : null}
                   </div>
-                  {/* 연습 문항은 빈칸 뒤 어미("예요.")까지 prompt 에 들어 있어 마침표를 따로 찍지 않는다. */}
-                  {activePractice !== null && activePractice.suffix ? (
-                    <p className="grammar-practice-question-text">{activePractice.suffix}</p>
-                  ) : activePractice !== null && activePractice.questionId !== null ? (
-                    <span className="grammar-practice-question-dot">.</span>
-                  ) : null}
-                </div>
+                )}
               </div>
             </section>
 
             {isFillStep ? (
               <>
                 <div className="grammar-practice-learn-more-wrap">
-                  <button type="button" className="grammar-practice-learn-more-button">Show hint</button>
+                  {hintButton}
                 </div>
+                {hintPanel}
                 {showFillResultPanel ? (
                   <aside
                     className={`grammar-practice-fill-result-panel ${
@@ -2553,8 +2847,9 @@ function GrammarPracticePage({
                   <p className="grammar-practice-status">{checkAnswer.error.message}</p>
                 )}
                 <div className="grammar-practice-hint-wrap">
-                  <button type="button" className="grammar-practice-hint-button">Show hint</button>
+                  {hintButton}
                 </div>
+                {hintPanel}
                 {showChoiceFeedbackPanel ? (
                   <aside
                     className={`grammar-practice-choice-result-panel ${
@@ -2638,9 +2933,10 @@ function GrammarPracticePage({
           <div
             className="grammar-practice-next-grammar-note-backdrop"
             role="presentation"
-            onClick={() => setActiveNextGrammarDialog(null)}
+            onClick={closeNextGrammarDialog}
           >
             <div
+              ref={nextGrammarDialogRef}
               className={`grammar-practice-next-grammar-note-dialog grammar-practice-next-grammar-note-dialog-${
                 activeNextGrammarDialog.kind === 'annotation'
                   ? activeNextGrammarDialog.annotations[activeNextGrammarDialog.index]?.type ===
@@ -2652,7 +2948,9 @@ function GrammarPracticePage({
               role="dialog"
               aria-modal="true"
               aria-labelledby="next-grammar-note-title"
+              tabIndex={-1}
               onClick={(event) => event.stopPropagation()}
+              onKeyDown={handleNextGrammarDialogKeyDown}
             >
               {activeNextGrammarDialog.kind === 'annotation'
                 ? (() => {
