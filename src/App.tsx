@@ -10,7 +10,7 @@ import OnboardingPage from './pages/OnboardingPage'
 import HomePage from './pages/HomePage'
 import PracticePage from './pages/PracticePage'
 import CustomizePracticePage, { type LanguageDirection } from './pages/CustomizePracticePage'
-import WordPracticePage from './pages/WordPracticePage'
+import WordPracticePage, { type WordPracticeCard } from './pages/WordPracticePage'
 import GrammarPracticePage, { type PracticeStep } from './pages/GrammarPracticePage'
 import ClassPage from './pages/ClassPage'
 import SettingPage from './pages/SettingPage'
@@ -32,6 +32,7 @@ import {
   isVocabSectionType,
 } from './data/annotationText'
 import { isUnauthorizedError } from './services/apiError'
+import { toContentLanguage } from './data/contentLanguage.ts'
 import { useChangeUserPassword } from './hooks/useChangeUserPassword.ts'
 import { useUpdateUserMe } from './hooks/useUpdateUserMe.ts'
 import { useUserMe } from './hooks/useUserMe.ts'
@@ -360,6 +361,9 @@ function App() {
     languageDirection: LanguageDirection
     sessionSeed: string
   } | null>(null)
+  const [notebookPracticeCards, setNotebookPracticeCards] = useState<WordPracticeCard[] | null>(null)
+  const [notebookVocabularyCourseId, setNotebookVocabularyCourseId] = useState<number | null>(null)
+  const [notebookVocabularyIsRecentSort, setNotebookVocabularyIsRecentSort] = useState(true)
   const [settingBackScreen, setSettingBackScreen] = useState<'home' | 'profile-main'>('home')
   const restoringHistoryRef = useRef(false)
   const replaceNextHistoryRef = useRef(false)
@@ -1004,9 +1008,14 @@ function App() {
         />
       ) : visibleScreen === 'customize-practice' ? (
         <CustomizePracticePage
+          sourceLanguageLabel={toContentLanguage(language) === 'he' ? 'Hebrew' : 'English'}
           onExit={() => {
-            setVocabularyLessonInitialView('card')
-            setScreen('vocabulary-lesson')
+            if (notebookPracticeCards) {
+              setScreen('vocabulary')
+            } else {
+              setVocabularyLessonInitialView('card')
+              setScreen('vocabulary-lesson')
+            }
           }}
           onNext={(questionCount, languageDirection) => {
             setWordPracticeSettings({
@@ -1020,8 +1029,12 @@ function App() {
       ) : visibleScreen === 'word-practice' ? (
         <WordPracticePage
           sectionId={selectedSectionId}
+          language={language}
+          practiceCards={notebookPracticeCards}
           questionCount={wordPracticeSettings?.questionCount ?? 5}
-          languageDirection={wordPracticeSettings?.languageDirection ?? 'english-to-korean'}
+          languageDirection={
+            wordPracticeSettings?.languageDirection ?? 'mother-language-to-korean'
+          }
           sessionSeed={wordPracticeSettings?.sessionSeed ?? 'preview'}
           onBack={() => {
             setScreen('customize-practice')
@@ -1030,8 +1043,12 @@ function App() {
             setScreen('customize-practice')
           }}
           onComplete={() => {
-            setVocabularyLessonInitialView('card')
-            setScreen('vocabulary-lesson')
+            if (notebookPracticeCards) {
+              setScreen('vocabulary')
+            } else {
+              setVocabularyLessonInitialView('card')
+              setScreen('vocabulary-lesson')
+            }
           }}
         />
       ) : visibleScreen === 'setting' ? (
@@ -1166,6 +1183,9 @@ function App() {
             setScreen('notebook-grammar')
           }}
           onOpenVocabulary={() => {
+            setNotebookPracticeCards(null)
+            setNotebookVocabularyCourseId(null)
+            setNotebookVocabularyIsRecentSort(true)
             setScreen('vocabulary')
           }}
           onOpenHome={() => {
@@ -1184,8 +1204,20 @@ function App() {
       ) : visibleScreen === 'vocabulary' ? (
         <VocabularyPage
           language={language}
+          initialCourseId={notebookVocabularyCourseId}
+          initialIsRecentSort={notebookVocabularyIsRecentSort}
           onBack={() => {
+            setNotebookPracticeCards(null)
+            setNotebookVocabularyCourseId(null)
+            setNotebookVocabularyIsRecentSort(true)
             setScreen('notebook')
+          }}
+          onSelectedCourseChange={setNotebookVocabularyCourseId}
+          onSortChange={setNotebookVocabularyIsRecentSort}
+          onOpenFlashcardPractice={(courseId, cards) => {
+            setNotebookVocabularyCourseId(courseId)
+            setNotebookPracticeCards(cards)
+            setScreen('customize-practice')
           }}
         />
       ) : visibleScreen === 'vocabulary-lesson' ? (
@@ -1216,6 +1248,7 @@ function App() {
             setScreen(vocabularyLessonBackScreen)
           }}
           onOpenFlashcardPractice={() => {
+            setNotebookPracticeCards(null)
             setVocabularyLessonInitialView('card')
             setScreen('customize-practice')
           }}

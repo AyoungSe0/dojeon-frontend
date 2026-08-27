@@ -1,7 +1,9 @@
 import { useEffect, useMemo, useState } from 'react'
 import './VocabularyPage.css'
 import { useVocabScraps } from '../hooks/useVocabScraps.ts'
+import { useDeleteScrap } from '../hooks/useDeleteScrap.ts'
 import type { VocabScrapGroup, VocabScrapItem } from '../types/scraps.types.ts'
+import type { WordPracticeCard } from './WordPracticePage.tsx'
 import {
   contentTextDirection,
   pickLocaleText,
@@ -11,7 +13,12 @@ import {
 
 interface VocabularyPageProps {
   language: string
+  initialCourseId?: number | null
+  initialIsRecentSort?: boolean
   onBack: () => void
+  onSelectedCourseChange: (courseId: number | null) => void
+  onSortChange: (isRecentSort: boolean) => void
+  onOpenFlashcardPractice: (courseId: number, cards: WordPracticeCard[]) => void
 }
 
 // 대시보드 preview(백엔드에서 5개로 잘라 보냄)와 개수를 맞춰 notebook → see more 이동 시 목록이 줄어 보이지 않게 한다.
@@ -181,15 +188,24 @@ const previewVocabGroups: VocabScrapGroup[] = [
   },
 ]
 
-function VocabularyPage({ language, onBack }: VocabularyPageProps) {
+function VocabularyPage({
+  language,
+  initialCourseId = null,
+  initialIsRecentSort = true,
+  onBack,
+  onSelectedCourseChange,
+  onSortChange,
+  onOpenFlashcardPractice,
+}: VocabularyPageProps) {
   const contentLanguage = toContentLanguage(language)
   const translationDir = contentTextDirection(contentLanguage)
-  const [isRecentSort, setIsRecentSort] = useState(true)
-  const [selectedCourseId, setSelectedCourseId] = useState<number | null>(null)
+  const [isRecentSort, setIsRecentSort] = useState(initialIsRecentSort)
+  const [selectedCourseId, setSelectedCourseId] = useState<number | null>(initialCourseId)
   const [expandedScrapId, setExpandedScrapId] = useState<string | null>(null)
   const [selectedWord, setSelectedWord] = useState<VocabScrapItem | null>(null)
-  const [flashcardScrapIds, setFlashcardScrapIds] = useState<Set<string>>(() => new Set())
+  const [pendingRemoval, setPendingRemoval] = useState<VocabScrapItem | null>(null)
   const { groups, loading, loadingMore, hasMore, error, fetchNextPage, refetch } = useVocabScraps()
+  const deleteScrapMutation = useDeleteScrap()
   const visibleGroups = import.meta.env.DEV && groups.length === 0 ? previewVocabGroups : groups
   const sortedVisibleGroups = useMemo(
     () => sortVocabGroups(visibleGroups, isRecentSort),
@@ -204,41 +220,38 @@ function VocabularyPage({ language, onBack }: VocabularyPageProps) {
   // 그룹 객체를 저장하지 않고 courseId로 다시 찾는다. 뒤이어 도착한 페이지의 단어까지 반영되도록.
   const selectedGroup =
     sortedVisibleGroups.find((group) => group.courseId === selectedCourseId) ?? null
-  const selectedFlashcardItems = selectedGroup
-    ? selectedGroup.items.filter((item) => flashcardScrapIds.has(item.scrapId))
-    : []
-  const selectedWordFlashcardIndex = selectedWord
-    ? selectedFlashcardItems.findIndex((item) => item.scrapId === selectedWord.scrapId)
-    : -1
   const selectedWordGroupIndex =
     selectedWord && selectedGroup
       ? selectedGroup.items.findIndex((item) => item.scrapId === selectedWord.scrapId)
       : -1
   const selectedWordDisplayIndex =
-    selectedWordFlashcardIndex >= 0
-      ? selectedWordFlashcardIndex + 1
-      : selectedWordGroupIndex >= 0
-        ? selectedWordGroupIndex + 1
-        : (selectedWord?.card?.sequence ?? 1)
+    selectedWordGroupIndex >= 0
+      ? selectedWordGroupIndex + 1
+      : (selectedWord?.card?.sequence ?? 1)
 
-  const toggleFlashcardItem = (scrapId: string) => {
-    setFlashcardScrapIds((current) => {
-      const next = new Set(current)
-      if (next.has(scrapId)) next.delete(scrapId)
-      else next.add(scrapId)
-      return next
-    })
+  const openRemovalPrompt = (item: VocabScrapItem) => {
+    deleteScrapMutation.reset()
+    setPendingRemoval(item)
   }
 
-  const removeFlashcardItem = (scrapId: string) => {
-    setFlashcardScrapIds((current) => {
-      const next = new Set(current)
-      next.delete(scrapId)
-      return next
-    })
+  const closeRemovalPrompt = () => {
+    if (deleteScrapMutation.isPending) return
+    deleteScrapMutation.reset()
+    setPendingRemoval(null)
+  }
 
-    const nextSelected = selectedFlashcardItems.find((item) => item.scrapId !== scrapId)
-    setSelectedWord(nextSelected ?? null)
+  const confirmRemoval = async () => {
+    if (!pendingRemoval || deleteScrapMutation.isPending) return
+
+    const scrapId = pendingRemoval.scrapId
+    try {
+      await deleteScrapMutation.mutateAsync(scrapId)
+      if (selectedWord?.scrapId === scrapId) setSelectedWord(null)
+      setExpandedScrapId((current) => (current === scrapId ? null : current))
+      setPendingRemoval(null)
+    } catch {
+      // The mutation exposes its error below so the user can retry or cancel.
+    }
   }
 
   const handleBack = () => {
@@ -249,6 +262,7 @@ function VocabularyPage({ language, onBack }: VocabularyPageProps) {
 
     if (selectedGroup) {
       setSelectedCourseId(null)
+      onSelectedCourseChange(null)
       setExpandedScrapId(null)
       return
     }
@@ -293,7 +307,11 @@ function VocabularyPage({ language, onBack }: VocabularyPageProps) {
             <button
               type="button"
               className="vocabulary-sort-button"
-              onClick={() => setIsRecentSort((prev) => !prev)}
+              onClick={() => {
+                const nextSort = !isRecentSort
+                setIsRecentSort(nextSort)
+                onSortChange(nextSort)
+              }}
               aria-label={isRecentSort ? 'Sort oldest added first' : 'Sort newest added first'}
             >
               <span>{isRecentSort ? 'Recently added' : 'Oldest added'}</span>
@@ -323,7 +341,7 @@ function VocabularyPage({ language, onBack }: VocabularyPageProps) {
             index={selectedWordDisplayIndex}
             contentLanguage={contentLanguage}
             translationDir={translationDir}
-            onRemove={() => removeFlashcardItem(selectedWord.scrapId)}
+            onRemove={() => openRemovalPrompt(selectedWord)}
           />
         ) : selectedGroup ? (
           <WordList
@@ -331,15 +349,21 @@ function VocabularyPage({ language, onBack }: VocabularyPageProps) {
             contentLanguage={contentLanguage}
             translationDir={translationDir}
             expandedScrapId={expandedScrapId}
-            flashcardScrapIds={flashcardScrapIds}
             onToggle={(scrapId) => {
               setExpandedScrapId((current) => (current === scrapId ? null : scrapId))
             }}
-            onToggleFlashcard={toggleFlashcardItem}
+            onRemove={openRemovalPrompt}
             onOpenDetail={setSelectedWord}
             onOpenFlashcardPractice={() => {
-              const [firstSelectedItem] = selectedFlashcardItems
-              if (firstSelectedItem) setSelectedWord(firstSelectedItem)
+              const cards = selectedGroup.items.flatMap((item) => {
+                if (!item.card) return []
+                return [{
+                  id: item.card.id,
+                  wordFront: item.card.wordFront,
+                  wordBack: getTranslation(item, contentLanguage),
+                }]
+              })
+              if (cards.length > 0) onOpenFlashcardPractice(selectedGroup.courseId, cards)
             }}
           />
         ) : loading ? (
@@ -364,12 +388,60 @@ function VocabularyPage({ language, onBack }: VocabularyPageProps) {
           <>
             <CourseList
               groups={sortedVisibleGroups}
-              onOpenGroup={(group) => setSelectedCourseId(group.courseId)}
+              onOpenGroup={(group) => {
+                setSelectedCourseId(group.courseId)
+                onSelectedCourseChange(group.courseId)
+              }}
             />
             {loadingMore ? <p className="vocabulary-loading">Loading more...</p> : null}
           </>
         )}
       </section>
+
+      {pendingRemoval ? (
+        <div
+          className="vocabulary-remove-modal-backdrop"
+          role="presentation"
+          onClick={closeRemovalPrompt}
+        >
+          <section
+            className="vocabulary-remove-modal"
+            role="dialog"
+            aria-modal="true"
+            aria-label="Confirm removal from personal list"
+            onClick={(event) => event.stopPropagation()}
+            onKeyDown={(event) => {
+              if (event.key !== 'Escape') return
+              event.preventDefault()
+              closeRemovalPrompt()
+            }}
+          >
+            <p className="vocabulary-remove-modal-copy">Remove from personal list?</p>
+            {deleteScrapMutation.isError ? (
+              <p className="vocabulary-remove-modal-error">Could not remove this word. Please try again.</p>
+            ) : null}
+            <div className="vocabulary-remove-modal-actions">
+              <button
+                type="button"
+                className="vocabulary-remove-modal-button vocabulary-remove-modal-button-secondary"
+                disabled={deleteScrapMutation.isPending}
+                onClick={closeRemovalPrompt}
+                autoFocus
+              >
+                NO
+              </button>
+              <button
+                type="button"
+                className="vocabulary-remove-modal-button vocabulary-remove-modal-button-primary"
+                disabled={deleteScrapMutation.isPending}
+                onClick={() => void confirmRemoval()}
+              >
+                YES
+              </button>
+            </div>
+          </section>
+        </div>
+      ) : null}
     </main>
   )
 }
@@ -414,9 +486,8 @@ function WordList({
   contentLanguage,
   translationDir,
   expandedScrapId,
-  flashcardScrapIds,
   onToggle,
-  onToggleFlashcard,
+  onRemove,
   onOpenDetail,
   onOpenFlashcardPractice,
 }: {
@@ -424,13 +495,12 @@ function WordList({
   contentLanguage: ContentLanguage
   translationDir: 'rtl' | 'ltr'
   expandedScrapId: string | null
-  flashcardScrapIds: Set<string>
   onToggle: (scrapId: string) => void
-  onToggleFlashcard: (scrapId: string) => void
+  onRemove: (item: VocabScrapItem) => void
   onOpenDetail: (item: VocabScrapItem) => void
   onOpenFlashcardPractice: () => void
 }) {
-  const hasFlashcardItems = group.items.some((item) => flashcardScrapIds.has(item.scrapId))
+  const hasFlashcardItems = group.items.length > 0
 
   return (
     <>
@@ -449,7 +519,6 @@ function WordList({
 
           {group.items.map((item) => {
             const isExpanded = expandedScrapId === item.scrapId
-            const isInFlashcard = flashcardScrapIds.has(item.scrapId)
 
             return (
               <div key={item.scrapId} className="vocabulary-word-entry">
@@ -462,8 +531,8 @@ function WordList({
                   <button
                     type="button"
                     className="vocabulary-row-icon"
-                    onClick={() => onToggleFlashcard(item.scrapId)}
-                    aria-label={isInFlashcard ? 'Remove from flashcard practice' : 'Add to flashcard practice'}
+                    onClick={() => onRemove(item)}
+                    aria-label={`Remove ${getWordFront(item)} from personal list`}
                   >
                     <svg
                       width="14"
@@ -473,7 +542,7 @@ function WordList({
                       aria-hidden="true"
                     >
                       <path
-                        d={isInFlashcard ? 'M2.5 7H11.5' : 'M7 2.5V11.5M2.5 7H11.5'}
+                        d="M2.5 7H11.5"
                         stroke="currentColor"
                         strokeWidth="1.8"
                         strokeLinecap="round"
@@ -567,7 +636,7 @@ function WordDetail({
             type="button"
             className="vocabulary-row-icon vocabulary-detail-minus"
             onClick={onRemove}
-            aria-label="Remove from flashcard practice"
+            aria-label="Remove from personal list"
           >
             <svg width="14" height="14" viewBox="0 0 14 14" fill="none" aria-hidden="true">
               <path
