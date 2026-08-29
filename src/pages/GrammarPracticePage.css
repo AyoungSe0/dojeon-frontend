@@ -3011,7 +3011,7 @@
 .grammar-practice-next-grammar-note-plus.is-saved::before {
   width: 9px;
   height: 5px;
-  border: solid currentColor;
+  border: solid currentcolor;
   border-width: 0 0 2px 2px;
   border-radius: 0;
   background: transparent;

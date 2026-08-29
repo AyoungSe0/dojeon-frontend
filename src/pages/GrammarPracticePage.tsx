@@ -472,17 +472,17 @@ function GrammarPracticePage({
   const getAnnotationUnit = (unitId: string) =>
     annotationsData?.units.find((unit) => unit.id === unitId) ?? null
 
-  const isSameLessonContent = (target: AnnotationTarget | null, unitId: string) => {
+  const isSameLessonContent = (
+    target: AnnotationTarget | null,
+    unitId: string,
+    annotationType: SectionAnnotation['type'],
+  ) => {
     const unit = getAnnotationUnit(unitId)
-    if (
-      target === null ||
-      target.materialId === null ||
-      unit === null ||
-      target.materialId !== unit.materialId ||
-      sectionId === null
-    ) {
+    if (target === null || unit === null || sectionId === null) {
       return false
     }
+    if (annotationType === 'VOCAB') return target.sectionId === sectionId
+    if (target.materialId === null || target.materialId !== unit.materialId) return false
 
     const currentLessonId = annotationsData?.lessonId ?? null
     const sameLesson =
@@ -892,7 +892,7 @@ function GrammarPracticePage({
     if (isCheckingAnnotationTarget) return
 
     const target = resolveAnnotationTarget(annotation)
-    if (isSameLessonContent(target, unitId)) {
+    if (isSameLessonContent(target, unitId, annotation.type)) {
       setAnnotationLessonBlockedMessage('현재 수업의 동일한 내용이라 이동할 수 없어요.')
       return
     }
@@ -3050,11 +3050,15 @@ function GrammarPracticePage({
                     const target = resolveAnnotationTarget(annotation)
                     const canGoToLesson =
                       target !== null &&
-                      !isSameLessonContent(target, dialog.unitId) &&
+                      !isSameLessonContent(target, dialog.unitId, annotation.type) &&
                       Boolean(onOpenAnnotationTarget) &&
                       sectionId !== null &&
                       markMode !== null
-                    const sameLessonContent = isSameLessonContent(target, dialog.unitId)
+                    const sameLessonContent = isSameLessonContent(
+                      target,
+                      dialog.unitId,
+                      annotation.type,
+                    )
                     const blockedMessage = sameLessonContent
                       ? null
                       : canGoToLesson
