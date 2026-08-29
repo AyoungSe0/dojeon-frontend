@@ -2976,9 +2976,13 @@
   position: relative;
   width: 22px;
   height: 22px;
+  padding: 0;
+  border: 0;
   border-radius: 50%;
   background: var(--dojeon-color-primary-container);
+  color: var(--dojeon-color-primary-action);
   flex: 0 0 auto;
+  cursor: pointer;
 }
 
 .grammar-practice-next-grammar-note-plus::before,
@@ -2996,6 +3000,30 @@
 
 .grammar-practice-next-grammar-note-plus::after {
   transform: translate(-50%, -50%) rotate(90deg);
+}
+
+.grammar-practice-next-grammar-note-plus.is-saved {
+  background: var(--dojeon-color-primary-action);
+  color: var(--dojeon-color-surface);
+  cursor: default;
+}
+
+.grammar-practice-next-grammar-note-plus.is-saved::before {
+  width: 9px;
+  height: 5px;
+  border: solid currentColor;
+  border-width: 0 0 2px 2px;
+  border-radius: 0;
+  background: transparent;
+  transform: translate(-50%, -65%) rotate(-45deg);
+}
+
+.grammar-practice-next-grammar-note-plus.is-saved::after {
+  display: none;
+}
+
+.grammar-practice-next-grammar-note-plus:disabled {
+  opacity: 1;
 }
 
 .grammar-practice-next-grammar-note-description {
