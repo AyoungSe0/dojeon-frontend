@@ -442,6 +442,9 @@ function GrammarPracticePage({
   const [listeningGradedAnswers, setListeningGradedAnswers] = useState<Record<number, boolean>>({})
   const [visibleExampleTranslations, setVisibleExampleTranslations] = useState<Record<string, boolean>>({})
   const [activeNextGrammarDialog, setActiveNextGrammarDialog] = useState<NextGrammarDialogState | null>(null)
+  const [savedAnnotationScraps, setSavedAnnotationScraps] = useState<Record<string, boolean>>({})
+  const [pendingAnnotationScrapId, setPendingAnnotationScrapId] = useState<string | null>(null)
+  const [annotationScrapError, setAnnotationScrapError] = useState<string | null>(null)
   const activeAnnotation =
     activeNextGrammarDialog?.kind === 'annotation'
       ? activeNextGrammarDialog.annotations[activeNextGrammarDialog.index] ?? null
@@ -465,6 +468,30 @@ function GrammarPracticePage({
       ? pickContentExplanation(targetMaterial.contentText, contentLanguage)
       : null
   }, [activeAnnotationTarget?.materialId, annotationGrammarMaterialsData, contentLanguage])
+
+  const getAnnotationUnit = (unitId: string) =>
+    annotationsData?.units.find((unit) => unit.id === unitId) ?? null
+
+  const isSameLessonContent = (
+    target: AnnotationTarget | null,
+    unitId: string,
+    annotationType: SectionAnnotation['type'],
+  ) => {
+    const unit = getAnnotationUnit(unitId)
+    if (target === null || unit === null || sectionId === null) {
+      return false
+    }
+    if (annotationType === 'VOCAB') return target.sectionId === sectionId
+    if (target.materialId === null || target.materialId !== unit.materialId) return false
+
+    const currentLessonId = annotationsData?.lessonId ?? null
+    const sameLesson =
+      target.lessonId !== null && currentLessonId !== null
+        ? target.lessonId === currentLessonId
+        : target.sectionId === sectionId
+
+    return sameLesson
+  }
   const [readingDragOffset, setReadingDragOffset] = useState(0)
   const [isReadingDragging, setIsReadingDragging] = useState(false)
   const [listeningDragOffset, setListeningDragOffset] = useState(0)
@@ -805,6 +832,7 @@ function GrammarPracticePage({
     if (annotations.length === 0) return
     setAnnotationLessonBlockedMessage(null)
     setIsCheckingAnnotationTarget(false)
+    setAnnotationScrapError(null)
     rememberNextGrammarDialogTrigger()
     setActiveNextGrammarDialog({
       kind: 'annotation',
@@ -814,6 +842,49 @@ function GrammarPracticePage({
     })
   }
 
+  const handleAnnotationScrapAdd = async (unitId: string, annotation: SectionAnnotation) => {
+    if (savedAnnotationScraps[annotation.id] || pendingAnnotationScrapId === annotation.id) return
+
+    const unit = getAnnotationUnit(unitId)
+    const target = resolveAnnotationTarget(annotation)
+    const scrapSectionId = target?.sectionId ?? sectionId
+    const cardId = annotation.type === 'VOCAB' ? target?.cardId ?? null : null
+    const materialId =
+      annotation.type === 'GRAMMAR'
+        ? target?.materialId ?? (target?.sectionId === sectionId ? unit?.materialId ?? null : null)
+        : null
+
+    if (scrapSectionId === null || scrapSectionId <= 0) {
+      setAnnotationScrapError('이 항목을 저장할 수 있는 수업 정보가 없어요.')
+      return
+    }
+    if (annotation.type === 'VOCAB' && cardId === null) {
+      setAnnotationScrapError('이 단어를 저장할 수 있는 카드 정보가 없어요.')
+      return
+    }
+    if (annotation.type === 'GRAMMAR' && materialId === null) {
+      setAnnotationScrapError('이 문법을 저장할 수 있는 자료 정보가 없어요.')
+      return
+    }
+
+    setPendingAnnotationScrapId(annotation.id)
+    setAnnotationScrapError(null)
+    try {
+      await createScrap.mutateAsync(
+        annotation.type === 'VOCAB'
+          ? { type: 'VOCAB', cardId: cardId!, sectionId: scrapSectionId }
+          : { type: 'GRAMMAR', materialId: materialId!, sectionId: scrapSectionId },
+      )
+      setSavedAnnotationScraps((current) => ({ ...current, [annotation.id]: true }))
+    } catch (error) {
+      setAnnotationScrapError(
+        error instanceof Error ? error.message : '저장하지 못했어요. 다시 시도해 주세요.',
+      )
+    } finally {
+      setPendingAnnotationScrapId(null)
+    }
+  }
+
   // annotation 팝업의 GO TO LESSON.
   // annotation 타입과 맞는 목적지인지 확인하고, 실제로 열리는 섹션일 때만 이동한다.
   // 이동할 수 없으면 다른 화면으로 폴백하지 않고 팝업에 안내 문구만 남긴다.
@@ -821,6 +892,10 @@ function GrammarPracticePage({
     if (isCheckingAnnotationTarget) return
 
     const target = resolveAnnotationTarget(annotation)
+    if (isSameLessonContent(target, unitId, annotation.type)) {
+      setAnnotationLessonBlockedMessage('현재 수업의 동일한 내용이라 이동할 수 없어요.')
+      return
+    }
     if (!target || target.sectionId === null || !onOpenAnnotationTarget || sectionId === null || markMode === null) {
       setAnnotationLessonBlockedMessage(annotationNoLessonMessage(annotation.type))
       return
@@ -2971,16 +3046,26 @@ function GrammarPracticePage({
                       annotation.type === 'GRAMMAR' && annotationTargetExplanation
                         ? contentTextDirection(toContentLanguage(annotationTargetExplanation.lang))
                         : contentTextDirection(contentLanguage)
-                    // annotation 타입과 맞는 목적지가 아니면 GO TO LESSON 자체를 숨긴다.
+                    // annotation 타입과 맞는 목적지가 아니면 숨기고, 현재 content면 비활성화한다.
                     const target = resolveAnnotationTarget(annotation)
                     const canGoToLesson =
                       target !== null &&
+                      !isSameLessonContent(target, dialog.unitId, annotation.type) &&
                       Boolean(onOpenAnnotationTarget) &&
                       sectionId !== null &&
                       markMode !== null
-                    const blockedMessage = canGoToLesson
-                      ? annotationLessonBlockedMessage
-                      : annotationNoLessonMessage(annotation.type)
+                    const sameLessonContent = isSameLessonContent(
+                      target,
+                      dialog.unitId,
+                      annotation.type,
+                    )
+                    const blockedMessage = sameLessonContent
+                      ? null
+                      : canGoToLesson
+                        ? annotationLessonBlockedMessage
+                        : annotationNoLessonMessage(annotation.type)
+                    const isAnnotationScrapSaved = savedAnnotationScraps[annotation.id] === true
+                    const isSavingAnnotationScrap = pendingAnnotationScrapId === annotation.id
 
                     return (
                       <>
@@ -3003,6 +3088,7 @@ function GrammarPracticePage({
                                 onClick={() => {
                                   // 다른 annotation 으로 바꾸면 이전 안내 문구는 지운다.
                                   setAnnotationLessonBlockedMessage(null)
+                                  setAnnotationScrapError(null)
                                   setActiveNextGrammarDialog({ ...dialog, index })
                                 }}
                               >
@@ -3018,7 +3104,27 @@ function GrammarPracticePage({
                           >
                             {annotation.concept?.title || annotation.surface}
                           </h3>
-                          <span className="grammar-practice-next-grammar-note-plus" aria-hidden="true" />
+                          <button
+                            type="button"
+                            className={`grammar-practice-next-grammar-note-plus ${
+                              isAnnotationScrapSaved ? 'is-saved' : ''
+                            }`}
+                            disabled={isAnnotationScrapSaved || pendingAnnotationScrapId !== null}
+                            aria-busy={isSavingAnnotationScrap}
+                            aria-label={
+                              isAnnotationScrapSaved
+                                ? 'Saved to personal notebook'
+                                : `Save ${annotation.concept?.title || annotation.surface} to personal notebook`
+                            }
+                            title={
+                              isAnnotationScrapSaved
+                                ? 'Saved to personal notebook'
+                                : 'Save to personal notebook'
+                            }
+                            onClick={() => {
+                              void handleAnnotationScrapAdd(dialog.unitId, annotation)
+                            }}
+                          />
                         </div>
                         <p
                           className={`grammar-practice-next-grammar-note-description ${
@@ -3030,7 +3136,25 @@ function GrammarPracticePage({
                         >
                           {annotationDescription}
                         </p>
-                        {blockedMessage ? (
+                        {annotationScrapError ? (
+                          <p className="grammar-practice-annotation-note-empty" role="status">
+                            {annotationScrapError}
+                          </p>
+                        ) : null}
+                        {sameLessonContent ? (
+                          <>
+                            <button
+                              type="button"
+                              className="grammar-practice-next-grammar-note-button"
+                              disabled
+                            >
+                              GO TO LESSON
+                            </button>
+                            <p className="grammar-practice-annotation-note-empty" role="status">
+                              현재 수업의 동일한 내용이라 이동할 수 없어요.
+                            </p>
+                          </>
+                        ) : blockedMessage ? (
                           <p className="grammar-practice-annotation-note-empty" role="status">
                             {blockedMessage}
                           </p>
