@@ -1261,22 +1261,27 @@ function GrammarPracticePage({
     const isSample = isSampleAnswerItem(item)
     const answerKey = answers.join('\u241f')
 
-    // 서버 문항 ID가 있는 MCQ/FILL은 자료에 정답이 병합돼 있어도 항상 서버에서 채점한다.
-    if (item.questionId !== null && sectionId !== null && item.kind !== 'free') {
+    // 서버 문항 ID가 있으면 자료에 정답이 병합돼 있어도 항상 서버에서 채점한다.
+    if (item.questionId !== null && sectionId !== null) {
       try {
         const result = await checkAnswer.mutateAsync({
           sectionId,
-          payload: { questionId: item.questionId, userAnswers: answers },
+          payload:
+            item.kind === 'fill'
+              ? { questionId: item.questionId, userAnswers: answers }
+              : { questionId: item.questionId, userAnswer: answers[0] ?? '' },
         })
+        // FREE는 응답의 correct를 판정으로 쓰지 않는다(correctAnswer는 모범 답안이다).
+        const isSampleResult = isSample || item.kind === 'free'
         return {
           answerKey,
-          correct: Boolean(result?.correct),
+          correct: isSampleResult ? false : Boolean(result?.correct),
           correctAnswer: result?.correctAnswer,
           correctAnswers: result?.correctAnswers,
-          isSample: false,
+          isSample: isSampleResult,
         }
       } catch {
-        return null
+        return item.kind === 'free' ? { answerKey, correct: false, isSample: true } : null
       }
     }
 
@@ -1353,7 +1358,10 @@ function GrammarPracticePage({
     try {
       const result = await checkAnswer.mutateAsync({
         sectionId,
-        payload: { questionId: question.questionId, userAnswers: [answer] },
+        payload:
+          question.type === 'blank'
+            ? { questionId: question.questionId, userAnswers: [answer] }
+            : { questionId: question.questionId, userAnswer: answer },
       })
       setReadingGradedAnswers((prev) => ({ ...prev, [index]: Boolean(result?.correct) }))
     } catch {
@@ -1395,7 +1403,10 @@ function GrammarPracticePage({
     try {
       const result = await checkAnswer.mutateAsync({
         sectionId,
-        payload: { questionId: question.questionId, userAnswers: [answer] },
+        payload:
+          question.type === 'blank'
+            ? { questionId: question.questionId, userAnswers: [answer] }
+            : { questionId: question.questionId, userAnswer: answer },
       })
       if (listeningAnswersRef.current[questionId] !== answer) return
       setListeningGradedAnswers((prev) => ({

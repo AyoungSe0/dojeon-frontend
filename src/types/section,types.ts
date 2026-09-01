@@ -136,10 +136,9 @@ export interface SectionQuestionResponse {
     timestamp: string;
 }
 
-export interface SectionCheckAnswerRequest {
-    questionId: number;
-    userAnswers: string[];
-}
+export type SectionCheckAnswerRequest =
+    | { questionId: number; userAnswer: string }
+    | { questionId: number; userAnswers: string[] };
 
 export interface SectionCheckAnswerData {
     correct: boolean;
