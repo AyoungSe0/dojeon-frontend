@@ -217,12 +217,16 @@ export async function fetchSectionCards(
 // 문항 응답이 { sectionId, questions } 로 오기도 하고 배열로 바로 오기도 해서 한 모양으로 맞춘다.
 // 식별자도 id / questionId 가 섞여 있어 둘 다 받는다.
 function normalizeSectionQuestion(raw: Record<string, unknown>): SectionQuestion {
-    const answer = raw.answer ?? raw.correctAnswer
+    // 목록 API는 일반 정답을 숨기고 FREE 문항의 예시 답안만 sample로 내려줌.
+    const answer = raw.answer ?? raw.correctAnswer ?? raw.sample
     return {
         id: typeof raw.id === 'number' ? raw.id : Number(raw.questionId ?? raw.id ?? 0),
         type: String(raw.type ?? ''),
         questionText: String(raw.questionText ?? ''),
         options: Array.isArray(raw.options) ? raw.options.map((option) => String(option)) : [],
+        blankCount: Number.isFinite(Number(raw.blankCount))
+            ? Math.max(1, Math.trunc(Number(raw.blankCount)))
+            : 1,
         answer: typeof answer === 'string' && answer.length > 0 ? answer : null,
         explanation: typeof raw.explanation === 'string' ? raw.explanation : null,
     }
